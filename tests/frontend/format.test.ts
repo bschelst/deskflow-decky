@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BACKEND_LABEL,
+  BACKEND_SHORT_LABEL,
   STATE_COLOUR,
   STATE_LABEL,
   describeBackend,
@@ -47,25 +48,34 @@ describe("label maps", () => {
   it("covers every input backend", () => {
     for (const backend of INPUT_BACKENDS) {
       expect(BACKEND_LABEL[backend]).toBeTruthy();
+      expect(BACKEND_SHORT_LABEL[backend]).toBeTruthy();
+    }
+  });
+
+  it("keeps panel labels short enough not to wrap the value column", () => {
+    // "Gamescope (libei)" wrapped onto a second line on hardware while neighbouring
+    // values sat on one, which reads as a broken row.
+    for (const backend of INPUT_BACKENDS) {
+      expect(BACKEND_SHORT_LABEL[backend].length).toBeLessThanOrEqual(10);
     }
   });
 });
 
 describe("describeBackend", () => {
   it("names the resolved backend", () => {
-    expect(describeBackend(status())).toBe("Gamescope (libei)");
+    expect(describeBackend(status())).toBe("Gamescope");
   });
 
   it("says so when automatic has not resolved yet", () => {
     expect(describeBackend(status({ backend: null, requestedBackend: "auto" }))).toBe(
-      "Not resolved yet",
+      "Not resolved",
     );
   });
 
   it("distinguishes a requested-but-inactive backend from an active one", () => {
     const text = describeBackend(status({ backend: null, requestedBackend: "uinput" }));
     expect(text).toContain("uinput");
-    expect(text).toContain("not active");
+    expect(text).toContain("inactive");
   });
 });
 

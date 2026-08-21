@@ -34,10 +34,24 @@ export const STATE_COLOUR: Record<HelperStateName, string> = {
 export const PASS_COLOUR = "#5ba32b";
 export const FAIL_COLOUR = "#c0392b";
 
+/** Full names, for the Settings dropdown where there is room to be precise. */
 export const BACKEND_LABEL: Record<InputBackend, string> = {
   auto: "Automatic",
   "gamescope-libei": "Gamescope (libei)",
   "x11-xtest": "XWayland (XTest)",
+  uinput: "uinput",
+};
+
+/**
+ * Short names for the Quick Access panel.
+ *
+ * The value column there is narrow: "Gamescope (libei)" wraps onto a second line while
+ * neighbouring values like "Client" and "Error" sit on one, which reads as a broken row.
+ */
+export const BACKEND_SHORT_LABEL: Record<InputBackend, string> = {
+  auto: "Automatic",
+  "gamescope-libei": "Gamescope",
+  "x11-xtest": "XWayland",
   uinput: "uinput",
 };
 
@@ -46,13 +60,14 @@ export const MODE_LABEL: Record<Mode, string> = {
   server: "Server",
 };
 
+/** For the narrow panel column: short, and always one line. */
 export function describeBackend(status: Status): string {
   if (status.backend === null) {
     return status.requestedBackend === "auto"
-      ? "Not resolved yet"
-      : `${BACKEND_LABEL[status.requestedBackend]} (not active)`;
+      ? "Not resolved"
+      : `${BACKEND_SHORT_LABEL[status.requestedBackend]} (inactive)`;
   }
-  return BACKEND_LABEL[status.backend];
+  return BACKEND_SHORT_LABEL[status.backend];
 }
 
 export function describeServer(status: Status): string {

@@ -43,7 +43,7 @@ export const StatusRows: FC<{ status: Status }> = ({ status }) => (
 
     <PanelSectionRow>
       <Field label="Backend" bottomSeparator="none">
-        {describeBackend(status)}
+        <Marquee>{describeBackend(status)}</Marquee>
       </Field>
     </PanelSectionRow>
 
