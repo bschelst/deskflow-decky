@@ -158,8 +158,9 @@ export const QuickAccessPanel: FC = () => {
                   const failed = result.data.checks.filter((check) => !check.ok);
                   setNote(
                     failed.length === 0
-                      ? "Self-test passed."
-                      : `Self-test: ${failed.map((check) => check.id).join(", ")} failed.`,
+                      ? `Self-test passed (${result.data.total} checks).`
+                      // Name what failed, not how many: the name is the actionable part.
+                      : `Needs attention: ${failed.map((c) => c.label).join(", ")}.`,
                   );
                 }
                 return result;

@@ -20,7 +20,7 @@ import {
   runSelfTest,
   setSettings,
 } from "../api/backend";
-import type { HelperInfo, SelfTestCheck, Settings } from "../api/types";
+import type { HelperInfo, SelfTestCheck, SelfTestResult, Settings } from "../api/types";
 import { ACTIVATION_MODES, INPUT_BACKENDS, LOG_LEVELS, MODES } from "../api/types";
 import { EditableTextField } from "../components/EditableTextField";
 import { LogsModal } from "../components/LogsModal";
@@ -66,18 +66,25 @@ interface Notice {
   text: string;
 }
 
+/**
+ * One self-test result.
+ *
+ * A coloured dot matching the Status row, then the check's name — so a failing row is
+ * findable at a glance and reads left-to-right. The dot is paired with wording in the
+ * detail line, never colour alone.
+ */
 const SelfTestRow: FC<{ check: SelfTestCheck }> = ({ check }) => (
   <PanelSectionRow>
     <Field
-      // Status lives in the label so it reads left-to-right. The glyph carries the
-      // meaning; the colour reinforces it.
       label={
-        <span style={{ color: check.ok ? PASS_COLOUR : FAIL_COLOUR }}>
-          {check.ok ? "✓" : "✗"} {check.id}
+        <span>
+          <span style={{ color: check.ok ? PASS_COLOUR : FAIL_COLOUR }}>{"● "}</span>
+          {check.label}
         </span>
       }
       description={check.detail}
       bottomSeparator="standard"
+      focusable
     />
   </PanelSectionRow>
 );
@@ -88,7 +95,7 @@ export const SettingsPage: FC = () => {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<Notice | null>(null);
   const [helper, setHelper] = useState<HelperInfo | null>(null);
-  const [checks, setChecks] = useState<SelfTestCheck[] | null>(null);
+  const [selfTest, setSelfTest] = useState<SelfTestResult | null>(null);
   // One flag for every action button on the page: without it a double-tap can issue
   // two concurrent lifecycle calls to the backend.
   const [busy, setBusy] = useState(false);
@@ -404,8 +411,18 @@ export const SettingsPage: FC = () => {
             onClick={() =>
               void act(async () => {
                 const result = await runSelfTest();
-                if (result.ok) setChecks(result.data.checks);
-                else say("diagnostics", result.error.message);
+                if (result.ok) {
+                  setSelfTest(result.data);
+                  const failed = result.data.total - result.data.passed;
+                  say(
+                    "diagnostics",
+                    failed === 0
+                      ? `All ${result.data.total} checks passed.`
+                      : `${failed} of ${result.data.total} checks need attention.`,
+                  );
+                } else {
+                  say("diagnostics", result.error.message);
+                }
               })
             }
           >
@@ -413,7 +430,7 @@ export const SettingsPage: FC = () => {
           </ButtonItem>
         </PanelSectionRow>
 
-        {(checks ?? []).map((check) => (
+        {(selfTest?.checks ?? []).map((check) => (
           <SelfTestRow key={check.id} check={check} />
         ))}
 

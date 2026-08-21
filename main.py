@@ -78,6 +78,9 @@ SUBPROCESS_TIMEOUT_S = 30
 #: within milliseconds, so "the process started" is not evidence of anything.
 MIN_HEALTHY_UPTIME_S = 5
 
+#: How long to wait when probing whether the server accepts connections.
+SERVER_PROBE_TIMEOUT_S = 4
+
 
 async def run_command(argv, timeout=SUBPROCESS_TIMEOUT_S):
     """Run an argument list and return stdout.
@@ -331,7 +334,7 @@ class Plugin:
         # the plugin could only report "exited with code 1" while the actual reason
         # (a missing binary, an unreadable config) went nowhere.
         if line.strip():
-            decky.logger.info("helper: %s", redact_line(line))
+            decky.logger.info("deskflow-decky helper: %s", redact_line(line))
 
         self._watcher.feed(line)
         if self._watcher.reported_backend is not None:
@@ -751,49 +754,106 @@ class Plugin:
     async def get_diagnostics(self):
         return ok(self._diagnostics_payload())
 
+    async def _probe_server(self):
+        """Can we open a TCP connection to the configured server? Bounded and harmless."""
+        host = self._settings.get("server_host")
+        port = self._settings.get("server_port")
+        if not host:
+            return False, "no server address is configured"
+        try:
+            _reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=SERVER_PROBE_TIMEOUT_S
+            )
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:  # noqa: BLE001 - closing is best effort
+                pass
+            return True, "reachable at {0}:{1}".format(host, port)
+        except asyncio.TimeoutError:
+            return False, "no answer from {0}:{1} within {2}s".format(
+                host, port, SERVER_PROBE_TIMEOUT_S
+            )
+        except OSError as exc:
+            return False, "{0}:{1} - {2}".format(host, port, exc.strerror or "unreachable")
+
     @safe
     async def run_self_test(self):
+        """Checks phrased so the failing one tells the user what to do next."""
         checks = []
 
+        def add(identifier, label, ok, detail):
+            checks.append({"id": identifier, "label": label, "ok": bool(ok), "detail": detail})
+
+        # 1. Is the helper there at all?
+        helper = await self.get_helper_info()
+        info = helper.get("data") or {}
+        installed = bool(info.get("installed"))
+        add(
+            "helper",
+            "Deskflow helper installed",
+            installed,
+            info.get("version") or APP_ID if installed else "install it from this page",
+        )
+
+        # 2. Can we inject input into this session?
         discovery = discover_socket(self._settings, relay_path=RELAY_PATH)
         self._last_discovery = discovery
-        checks.append(
-            {
-                "id": "eis_socket",
-                "ok": discovery.found,
-                "detail": discovery.path or "; ".join(discovery.checked) or "not found",
-            }
+        add(
+            "input_socket",
+            "Gamescope input socket",
+            discovery.found,
+            discovery.path
+            or "not found; the plugin can only inject input inside a Gamescope session",
         )
 
-        helper = await self.get_helper_info()
-        installed = bool((helper.get("data") or {}).get("installed"))
-        checks.append(
-            {
-                "id": "helper_installed",
-                "ok": installed,
-                "detail": APP_ID if installed else "helper flatpak is not installed",
-            }
+        # 3. Is it configured enough to start?
+        mode = self._settings.get("mode")
+        configured = bool(self._settings.get("server_host")) or mode == "server"
+        add(
+            "configured",
+            "Server address set",
+            configured,
+            self._settings.get("server_host") or "enter the address of your Deskflow server",
         )
 
-        configured = bool(self._settings["server_host"]) or self._settings["mode"] == "server"
-        checks.append(
-            {
-                "id": "configured",
-                "ok": configured,
-                "detail": "server address is set" if configured else "no server address",
-            }
-        )
+        # 4. Server mode cannot capture in Gaming Mode.
+        if mode == "server":
+            add(
+                "server_mode",
+                "Server mode supported here",
+                not _is_gaming_mode(),
+                "Gaming Mode has no input-capture portal; use Desktop Mode"
+                if _is_gaming_mode()
+                else "Desktop Mode",
+            )
 
-        cert_ok = os.path.exists(CERT_PATH) or not self._settings["tls_enabled"]
-        checks.append(
-            {
-                "id": "certificate",
-                "ok": cert_ok,
-                "detail": "present" if cert_ok else "not generated yet",
-            }
-        )
+        # 5. Is the server actually up? The most common real failure.
+        if configured and mode == "client":
+            reachable, detail = await self._probe_server()
+            add("server_reachable", "Server reachable", reachable, detail)
 
-        return ok({"checks": checks})
+        # 6. TLS material.
+        if self._settings.get("tls_enabled"):
+            add(
+                "certificate",
+                "This Deck's certificate",
+                os.path.exists(CERT_PATH),
+                "present" if os.path.exists(CERT_PATH) else "will be generated on first start",
+            )
+            trusted = self._trust.all()
+            add(
+                "trusted_server",
+                "Server certificate trusted",
+                bool(trusted),
+                "{0} trusted".format(len(trusted))
+                if trusted
+                else "you will be asked to confirm it on the next connection",
+            )
+
+        passed = sum(1 for check in checks if check["ok"])
+        decky.logger.info("Self-test: %s of %s checks passed", passed, len(checks))
+        return ok({"checks": checks, "passed": passed, "total": len(checks)})
 
     @safe
     async def export_diagnostics(self):

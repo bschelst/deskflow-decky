@@ -1,31 +1,37 @@
-From 9bda8b3111001b92b8fcdd99285c449fc066ef33 Mon Sep 17 00:00:00 2001
+From d61e21dc4334a396f81bb83e5daf56e34b64bfb4 Mon Sep 17 00:00:00 2001
 From: Bart Schelstraete <bart@schelstraete.org>
-Date: Sat, 22 Aug 2026 00:00:51 +0200
+Date: Sat, 22 Aug 2026 00:21:19 +0200
 Subject: [PATCH] fix: usable screen shape and a backing-off reconnect on the
  ei socket backend
 
 Two problems that only appear with the socket backend, where the compositor's
-virtual devices are relative-only and libei reports no absolute region.
+virtual devices are relative-only.
 
-updateShape() then leaves the screen at 1x1 with an unset origin, and the client
-announces that shape to the server. A Deskflow server rejects it outright
-("invalid message from client: DINF"), and then drains the connection because it
-can no longer find message boundaries, so the client sees the server go silent.
-Even where a server accepts it, a one-pixel screen is a trap: once the pointer
-crosses onto it there is nowhere left to move back from, and the user loses the
-keyboard and mouse on the machine running the server.
+Such a device has no meaningful screen region to report. gamescope hands out
+2147483647x2147483647; others report nothing at all, leaving updateShape() at
+1x1. kMsgDInfo carries geometry as int16, so the former truncates to -1 on the
+wire and a server rejects the message outright:
 
-Fall back to a fixed logical screen size when no region is reported, overridable
-with DESKFLOW_SCREEN_SIZE=WxH. Screens that do report regions are unaffected.
+    ERROR: invalid message from client "steamdeck": DINF
+
+recvInfo() fails its `w <= 0` check, and because the server can no longer find
+message boundaries it drains the whole stream, so the client just sees the
+server fall silent and time out. The 1x1 case is no better: a one-pixel screen
+is a trap for the pointer, which has nowhere to move back to once it crosses
+over, and that costs the user the keyboard and mouse on the server machine.
+
+Treat a region as usable only if it is non-empty and fits the protocol's int16
+extent; otherwise fall back to a fixed logical screen size, overridable with
+DESKFLOW_SCREEN_SIZE=WxH. Screens reporting a real region are unaffected.
 
 Separately, the reconnect interval is a flat 1 second at every call site, which
 hammers an unreachable server indefinitely -- on a battery-powered client that is
 pure waste, and it fills the log with a failure per second. Escalate 1, 2, 5, 10,
 15 and then settle at 30 seconds, resetting once a connection succeeds.
 ---
- src/lib/deskflow/ClientApp.cpp | 33 +++++++++++++++++++++++++++----
- src/lib/platform/EiScreen.cpp  | 36 ++++++++++++++++++++++++++++++++++
- 2 files changed, 65 insertions(+), 4 deletions(-)
+ src/lib/deskflow/ClientApp.cpp | 33 +++++++++++++++++++++----
+ src/lib/platform/EiScreen.cpp  | 44 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 73 insertions(+), 4 deletions(-)
 
 diff --git a/src/lib/deskflow/ClientApp.cpp b/src/lib/deskflow/ClientApp.cpp
 index 9e1b9f5..1718575 100644
@@ -107,7 +113,7 @@ index 9e1b9f5..1718575 100644
  }
  
 diff --git a/src/lib/platform/EiScreen.cpp b/src/lib/platform/EiScreen.cpp
-index 5ef4c82..d608bd9 100644
+index 5ef4c82..157505f 100644
 --- a/src/lib/platform/EiScreen.cpp
 +++ b/src/lib/platform/EiScreen.cpp
 @@ -462,10 +462,12 @@ void EiScreen::updateShape()
@@ -123,18 +129,24 @@ index 5ef4c82..d608bd9 100644
        m_x = std::min(ei_region_get_x(r), m_x);
        m_y = std::min(ei_region_get_y(r), m_y);
        m_w = std::max(ei_region_get_x(r) + ei_region_get_width(r), m_w);
-@@ -473,6 +475,40 @@ void EiScreen::updateShape()
+@@ -473,6 +475,48 @@ void EiScreen::updateShape()
      }
    }
  
-+  if (!haveRegion) {
-+    // No device reported an absolute region. A compositor whose virtual devices are
-+    // relative-only -- gamescope, for one -- provides none, and the screen would then
-+    // be announced as 1x1 at an unset origin. A server rejects that shape, and even if
-+    // it accepted it, a one-pixel screen is a trap: once the pointer crosses onto it
-+    // there is nowhere left to move back from.
-+    //
-+    // Fall back to a fixed logical size. DESKFLOW_SCREEN_SIZE overrides it, as "WxH".
++  // kMsgDInfo carries screen geometry as int16, so any extent beyond 32767 cannot be
++  // announced at all. A compositor whose virtual devices are relative-only has no
++  // meaningful screen region to report: gamescope hands out 2147483647x2147483647,
++  // which truncates to -1 on the wire, and the server then rejects the DINF outright
++  // ("invalid message from client") and drops the connection. Others report nothing,
++  // leaving the shape at 1x1 -- equally unusable, and a trap for the pointer, which
++  // has nowhere to move back to once it crosses over.
++  //
++  // Fall back to a fixed logical size. DESKFLOW_SCREEN_SIZE overrides it, as "WxH".
++  constexpr std::uint32_t maxProtocolExtent = 32767;
++  const bool usableRegion =
++      haveRegion && m_w > 0 && m_h > 0 && m_w <= maxProtocolExtent && m_h <= maxProtocolExtent;
++
++  if (!usableRegion) {
 +    int32_t width = 1280;
 +    int32_t height = 800;
 +    const auto configured = qEnvironmentVariable("DESKFLOW_SCREEN_SIZE");
@@ -158,7 +170,9 @@ index 5ef4c82..d608bd9 100644
 +    m_y = 0;
 +    m_w = width;
 +    m_h = height;
-+    LOG_INFO("no libei region reported; using fixed logical screen size %dx%d", m_w, m_h);
++    LOG_INFO(
++        "libei reported no usable screen region; using fixed logical screen size %dx%d", m_w, m_h
++    );
 +  }
 +
    LOG_DEBUG("logical output size: %dx%d@%d.%d", m_w, m_h, m_x, m_y);

@@ -89,8 +89,16 @@ export interface Settings {
 
 export interface SelfTestCheck {
   id: string;
+  /** Human-readable name; the id is a stable key, not something to show a user. */
+  label: string;
   ok: boolean;
   detail: string;
+}
+
+export interface SelfTestResult {
+  checks: SelfTestCheck[];
+  passed: number;
+  total: number;
 }
 
 export interface PendingFingerprint {

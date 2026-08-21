@@ -29,7 +29,7 @@ import type {
   HelperInfo,
   PendingFingerprint,
   Result,
-  SelfTestCheck,
+  SelfTestResult,
   Settings,
   Status,
 } from "./types";
@@ -137,7 +137,7 @@ const rawGetLogs = callable<[lines: number], unknown>("get_logs");
 const rawDiagnostics = callable<[], unknown>("get_diagnostics");
 const rawExportDiagnostics = callable<[], unknown>("export_diagnostics");
 
-export const runSelfTest = (): Promise<Result<{ checks: SelfTestCheck[] }>> =>
+export const runSelfTest = (): Promise<Result<SelfTestResult>> =>
   guarded(rawSelfTest, viaGuard(isSelfTest));
 
 export const getLogs = (lines: number): Promise<Result<{ lines: string[] }>> =>

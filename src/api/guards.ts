@@ -19,7 +19,7 @@ import {
   type HelperInfo,
   type PendingFingerprint,
   type Result,
-  type SelfTestCheck,
+  type SelfTestResult,
   type Settings,
   type Status,
 } from "./types";
@@ -179,11 +179,16 @@ export function isSettings(value: unknown): value is Settings {
   );
 }
 
-export function isSelfTest(value: unknown): value is { checks: SelfTestCheck[] } {
+export function isSelfTest(value: unknown): value is SelfTestResult {
   if (!isObject(value) || !Array.isArray(value.checks)) return false;
+  if (!isInt(value.passed) || !isInt(value.total)) return false;
   return value.checks.every(
     (check) =>
-      isObject(check) && isString(check.id) && isBool(check.ok) && isString(check.detail),
+      isObject(check) &&
+      isString(check.id) &&
+      isString(check.label) &&
+      isBool(check.ok) &&
+      isString(check.detail),
   );
 }
 
