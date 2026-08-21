@@ -18,6 +18,7 @@ from deskflow_config import write_config
 from diagnostics import build_report, redact_line
 from discovery import discover_socket
 from envelope import err, ok, safe, set_logger
+from identity import derive_client_name
 from helper_process import (
     APP_ID,
     HelperProcess,
@@ -30,6 +31,7 @@ from helper_process import (
     resolve_backend,
 )
 from log_watch import FingerprintWatcher
+from screen_size import choose_screen_size, detection_commands
 from state import HelperState, IllegalTransition
 from tls import (
     PinnedHosts,
@@ -69,6 +71,11 @@ PINNED_HOSTS_PATH = os.path.join(SETTINGS_DIR, "pinned-hosts.json")
 RELAY_PATH = os.path.join(RUNTIME_DIR, "eis-socket")
 
 STATE_EVENT = "deskflow_state"
+NOTIFY_EVENT = "deskflow_notify"
+
+#: States that mean "we had a working connection and lost it".
+_LOST_STATES = ("disconnected", "error")
+_HEALTHY_STATES = ("connected", "degraded")
 MAX_LOG_LINES = 1000
 MAX_CONSECUTIVE_FAILURES = 5
 SUBPROCESS_TIMEOUT_S = 30
@@ -135,6 +142,9 @@ class Plugin:
         self._resolved_backend_reported = None
         self._helper_started_at = None
         self._helper_installed = None
+        self._screen_size = None
+        # One notification per outage, not one per reconnect attempt.
+        self._notified_disconnect = False
         self._watcher = FingerprintWatcher(
             on_fingerprint=self._on_peer_fingerprint, logger=decky.logger
         )
@@ -175,9 +185,27 @@ class Plugin:
     def _load_settings(self):
         self._settings_manager.read()
         raw = self._settings_manager.getSetting("settings", None)
+        first_run = raw is None
         settings, warnings = sanitize_loaded(raw if raw is not None else dict(DEFAULTS))
         for warning in warnings:
             decky.logger.warning(warning)
+
+        if first_run:
+            # Every Steam Deck and Steam Machine is called "steamdeck" out of the box,
+            # so that name collides the moment a second one talks to the same server.
+            # Derive a stable, machine-unique one instead.
+            #
+            # Only on first run: the name has to match a screen in the server's layout,
+            # so silently renaming an already-configured install would break a setup
+            # that works.
+            settings["client_name"] = derive_client_name()
+            self._settings_manager.setSetting("settings", settings)
+            decky.logger.info(
+                "First run: this Deck will identify itself as '%s'. Add a screen with "
+                "that name to your Deskflow server's layout.",
+                settings["client_name"],
+            )
+
         return settings
 
     @safe
@@ -213,8 +241,41 @@ class Plugin:
         )
         return snapshot
 
+    def _notify_disconnected(self, reason):
+        """Tell the user once that a working connection dropped.
+
+        Once per outage: the supervisor retries on a schedule, and a toast per attempt
+        would be worse than no toast at all. Cleared when a connection succeeds.
+        """
+        if self._notified_disconnect:
+            return
+        if not self._settings.get("notifications_enabled", True):
+            return
+        self._notified_disconnect = True
+        server = self._settings.get("server_host") or "the Deskflow server"
+        self._loop.create_task(
+            decky.emit(
+                NOTIFY_EVENT,
+                {
+                    "title": "Deskflow disconnected",
+                    "body": "Lost the connection to {0}. {1}".format(
+                        server,
+                        "Reconnecting automatically."
+                        if self._settings.get("reconnect_enabled")
+                        else "Automatic reconnect is off.",
+                    ),
+                },
+            )
+        )
+
     def _on_state_change(self, origin, target, reason):
         decky.logger.info("State %s -> %s (%s)", origin, target, reason or "no reason given")
+
+        if target in _HEALTHY_STATES:
+            # Back up: arm the notification again for the next outage.
+            self._notified_disconnect = False
+        elif target in _LOST_STATES and origin in _HEALTHY_STATES:
+            self._notify_disconnected(reason)
         # Push rather than making the UI poll; the frontend poll is only a safety net
         # for a missed event.
         self._loop.create_task(decky.emit(STATE_EVENT, self._status_payload()))
@@ -225,6 +286,41 @@ class Plugin:
 
     # ----------------------------------------------------------------- helper control
 
+    async def _detect_screen_size(self):
+        """Ask the running session how large its pointer space is.
+
+        Read-only queries against the session's own X server. Nothing is hardcoded to a
+        particular device: whatever this machine reports is what gets announced.
+        """
+        display = os.environ.get("DISPLAY") or ":0"
+        for argv, parse, _ in detection_commands(display):
+            try:
+                env = clean_subprocess_env()
+                env["DISPLAY"] = display
+                process = await spawn_process(
+                    *argv, env=env, stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
+            except Exception:  # noqa: BLE001 - a missing tool is not an error here
+                continue
+            size = parse(stdout.decode("utf-8", "replace"))
+            if size:
+                decky.logger.info("Detected pointer space %sx%s via %s", size[0], size[1], argv[0])
+                return size
+        decky.logger.warning("Could not detect the pointer space; using the fallback size.")
+        return None
+
+    async def _resolve_screen_size(self):
+        configured_w = self._settings.get("screen_width") or 0
+        configured_h = self._settings.get("screen_height") or 0
+        detected = None
+        if not (configured_w and configured_h):
+            detected = await self._detect_screen_size()
+        size = choose_screen_size(configured_w, configured_h, detected)
+        self._screen_size = size
+        return size
+
     async def _prepare_launch(self):
         """Discover, resolve, and render everything needed to start. Raises LaunchError."""
         settings = self._settings
@@ -233,9 +329,13 @@ class Plugin:
         display = os.environ.get("DISPLAY")
 
         backend = resolve_backend(settings["input_backend"], discovery, display)
-        env = build_environment(settings, backend, discovery, display=display)
+        screen_size = await self._resolve_screen_size()
+        env = build_environment(
+            settings, backend, discovery, display=display, screen_size=screen_size
+        )
         argv = build_command(
-            settings, CONFIG_PATH, backend, discovery, display=display, app_id=APP_ID
+            settings, CONFIG_PATH, backend, discovery, display=display, app_id=APP_ID,
+            screen_size=screen_size,
         )
         return backend, argv, env, discovery
 
@@ -744,6 +844,7 @@ class Plugin:
                 "socket_source": discovery.source if discovery else None,
                 "discovery_checked": "; ".join(discovery.checked) if discovery else None,
                 "uinput_present": os.path.exists("/dev/uinput"),
+                "screen_size": "{0}x{1}".format(*self._screen_size) if self._screen_size else None,
                 "helper_pid": self._helper.pid,
                 "tls_enabled": self._settings.get("tls_enabled"),
                 "input_released_on_last_stop": self._input_released_on_last_stop,
@@ -833,7 +934,18 @@ class Plugin:
             reachable, detail = await self._probe_server()
             add("server_reachable", "Server reachable", reachable, detail)
 
-        # 6. TLS material.
+        # 6. The pointer space. A wrong value is why a pointer stops partway across.
+        size = await self._resolve_screen_size()
+        auto = not (self._settings.get("screen_width") and self._settings.get("screen_height"))
+        add(
+            "screen_size",
+            "Screen size",
+            True,
+            "{0}x{1} ({2}). If the pointer cannot reach the whole screen, set this "
+            "manually.".format(size[0], size[1], "detected" if auto else "set manually"),
+        )
+
+        # 7. TLS material.
         if self._settings.get("tls_enabled"):
             add(
                 "certificate",

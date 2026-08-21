@@ -36,6 +36,9 @@ MAX_BACKOFF_S = 300
 MIN_SENSITIVITY = 0.25
 MAX_SENSITIVITY = 4.0
 MAX_CLIENT_NAME_LENGTH = 63
+MIN_SCREEN_EXTENT = 320
+#: The wire protocol carries screen geometry as int16 (kMsgDInfo).
+MAX_SCREEN_EXTENT = 32767
 
 # \Z, not $: in Python `$` also matches immediately before a trailing newline, so
 # `^[A-Za-z0-9._-]+$` accepts "deck\n" -- which would inject a line break into the
@@ -220,6 +223,13 @@ def _sensitivity(field, value):
     return _bounded_float(field, value, MIN_SENSITIVITY, MAX_SENSITIVITY)
 
 
+def _screen_extent(field, value):
+    """0 means "detect from the running session"; anything else is an explicit size."""
+    if _is_int(value) and value == 0:
+        return value
+    return _bounded_int(field, value, MIN_SCREEN_EXTENT, MAX_SCREEN_EXTENT)
+
+
 MODES = ("client", "server")
 INPUT_BACKENDS = ("auto", "gamescope-libei", "x11-xtest", "uinput")
 ACTIVATION_MODES = ("manual", "always")
@@ -237,8 +247,11 @@ FIELDS = {
     "socket_path_override": ("", _socket_path_override),
     "autostart_gaming_mode": (False, _boolean),
     "reconnect_enabled": (True, _boolean),
+    "notifications_enabled": (True, _boolean),
     "reconnect_max_backoff_s": (30, _backoff),
     "pointer_sensitivity": (1.0, _sensitivity),
+    "screen_width": (0, _screen_extent),
+    "screen_height": (0, _screen_extent),
     "activation_mode": ("manual", _enum(ACTIVATION_MODES)),
     "log_level": ("info", _enum(LOG_LEVELS)),
 }

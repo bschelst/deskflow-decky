@@ -124,7 +124,9 @@ export const DocumentationPage: FC = () => (
       </Paragraph>
       <Paragraph>
         2. Add a screen to its layout whose name exactly matches this Deck's name from
-        the Settings page (the default is "steamdeck").
+        the Settings page. It defaults to something like "steamos-4f2a" rather than
+        "steamdeck", because every Steam Deck and Steam Machine ships with that same
+        hostname and two of them would collide on one server.
       </Paragraph>
       <Paragraph>
         3. Note the server's IP address, and make sure port 24800 is reachable from the

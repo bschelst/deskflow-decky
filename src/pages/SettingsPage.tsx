@@ -23,6 +23,7 @@ import {
 import type { HelperInfo, SelfTestCheck, SelfTestResult, Settings } from "../api/types";
 import { ACTIVATION_MODES, INPUT_BACKENDS, LOG_LEVELS, MODES } from "../api/types";
 import { EditableTextField } from "../components/EditableTextField";
+import { Dot } from "../components/Dot";
 import { LogsModal } from "../components/LogsModal";
 import { useDeskflowStatus } from "../hooks/useDeskflowStatus";
 import { BACKEND_LABEL, FAIL_COLOUR, MODE_LABEL, PASS_COLOUR } from "../lib/format";
@@ -75,17 +76,10 @@ interface Notice {
  */
 const SelfTestRow: FC<{ check: SelfTestCheck }> = ({ check }) => (
   <PanelSectionRow>
-    <Field
-      label={
-        <span>
-          <span style={{ color: check.ok ? PASS_COLOUR : FAIL_COLOUR }}>{"● "}</span>
-          {check.label}
-        </span>
-      }
-      description={check.detail}
-      bottomSeparator="standard"
-      focusable
-    />
+    <Field label={check.label} description={check.detail} bottomSeparator="standard" focusable>
+      <Dot colour={check.ok ? PASS_COLOUR : FAIL_COLOUR} />
+      {check.ok ? "OK" : "Failed"}
+    </Field>
   </PanelSectionRow>
 );
 
@@ -301,6 +295,36 @@ export const SettingsPage: FC = () => {
         </PanelSectionRow>
 
         <PanelSectionRow>
+          <EditableTextField
+            label="Screen width"
+            mustBeNumeric
+            description={
+              fieldErrors.screen_width ??
+              "0 detects it from this session. Set it manually only if the pointer " +
+                "cannot reach the whole screen."
+            }
+            value={String(settings.screen_width)}
+            onCommit={(value) => {
+              const parsed = Number.parseInt(value, 10);
+              if (Number.isInteger(parsed)) void commit({ screen_width: parsed });
+            }}
+          />
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <EditableTextField
+            label="Screen height"
+            mustBeNumeric
+            description={fieldErrors.screen_height ?? "0 detects it from this session."}
+            value={String(settings.screen_height)}
+            onCommit={(value) => {
+              const parsed = Number.parseInt(value, 10);
+              if (Number.isInteger(parsed)) void commit({ screen_height: parsed });
+            }}
+          />
+        </PanelSectionRow>
+
+        <PanelSectionRow>
           <DropdownItem
             label="Activation"
             description="Manual means input is delivered only while you enable it."
@@ -325,6 +349,18 @@ export const SettingsPage: FC = () => {
             label="Reconnect automatically"
             checked={settings.reconnect_enabled}
             onChange={(checked) => void commit({ reconnect_enabled: checked })}
+          />
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <ToggleField
+            label="Notify me when disconnected"
+            description={
+              "Shows a Steam notification if a working connection drops. One per " +
+              "outage, not one per reconnect attempt."
+            }
+            checked={settings.notifications_enabled}
+            onChange={(checked) => void commit({ notifications_enabled: checked })}
           />
         </PanelSectionRow>
 

@@ -73,6 +73,16 @@ export function validateField(field: keyof Settings, value: unknown): string | n
         ? null
         : "Use letters, digits, dots, hyphens or underscores (max 63).";
 
+    case "screen_width":
+    case "screen_height":
+      if (typeof value !== "number" || !Number.isInteger(value)) {
+        return "Must be a whole number.";
+      }
+      // 0 means "detect from the running session".
+      return value === 0 || (value >= 320 && value <= 32767)
+        ? null
+        : "Use 0 to detect automatically, or a value between 320 and 32767.";
+
     case "reconnect_max_backoff_s":
       if (typeof value !== "number" || !Number.isInteger(value)) {
         return "Must be a whole number.";

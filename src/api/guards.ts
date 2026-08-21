@@ -172,8 +172,11 @@ export function isSettings(value: unknown): value is Settings {
     isString(value.socket_path_override) &&
     isBool(value.autostart_gaming_mode) &&
     isBool(value.reconnect_enabled) &&
+    isBool(value.notifications_enabled) &&
     isInt(value.reconnect_max_backoff_s) &&
     isNumber(value.pointer_sensitivity) &&
+    isInt(value.screen_width) &&
+    isInt(value.screen_height) &&
     isMember(value.activation_mode, ACTIVATION_MODES) &&
     isMember(value.log_level, LOG_LEVELS)
   );

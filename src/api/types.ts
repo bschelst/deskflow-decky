@@ -81,8 +81,11 @@ export interface Settings {
   socket_path_override: string;
   autostart_gaming_mode: boolean;
   reconnect_enabled: boolean;
+  notifications_enabled: boolean;
   reconnect_max_backoff_s: number;
   pointer_sensitivity: number;
+  screen_width: number;
+  screen_height: number;
   activation_mode: ActivationMode;
   log_level: LogLevel;
 }

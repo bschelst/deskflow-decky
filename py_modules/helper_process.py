@@ -47,8 +47,13 @@ NOT_FORWARDED_TO_SANDBOX = frozenset({"PATH"})
 #: against an unreachable server, which on a battery-powered device is pure waste.
 RESTART_SCHEDULE_S = (1, 2, 5, 10, 15, 30)
 
-#: Logical screen size claimed when libei reports no region. The Deck's native panel.
-DEFAULT_SCREEN_SIZE = "1280x800"
+#: Logical screen size claimed when libei reports no usable region.
+#:
+#: This must match the compositor's pointer coordinate space, which is NOT necessarily
+#: the panel resolution: gamescope runs a nested surface and scales it, so a Deck
+#: docked to a 4K display can have a 2560x1600 pointer space. Getting it wrong is
+#: immediately visible -- the pointer stops partway across the screen.
+DEFAULT_SCREEN_SIZE = (1280, 800)
 
 TERMINATE_GRACE_S = 5
 
@@ -157,7 +162,7 @@ def resolve_backend(requested, discovery, display=None):
     return requested
 
 
-def build_environment(settings, backend, discovery, display=None, home=None):
+def build_environment(settings, backend, discovery, display=None, home=None, screen_size=None):
     """The complete environment for the helper, built from nothing.
 
     Inheriting Decky's environment would hand the helper a pile of variables it has no
@@ -184,7 +189,8 @@ def build_environment(settings, backend, discovery, display=None, home=None):
         # Gamescope's virtual devices are relative-only, so libei reports no region and
         # the patched helper needs to be told what screen shape to announce. Without
         # this it claims 1x1, which the server rejects and which strands the pointer.
-        env["DESKFLOW_SCREEN_SIZE"] = DEFAULT_SCREEN_SIZE
+        width, height = screen_size or DEFAULT_SCREEN_SIZE
+        env["DESKFLOW_SCREEN_SIZE"] = "{0}x{1}".format(width, height)
 
     elif backend == "x11-xtest":
         # PlatformInfo::isWayland() tests XDG_SESSION_TYPE, and that is what makes
@@ -204,10 +210,12 @@ def build_environment(settings, backend, discovery, display=None, home=None):
     return {key: str(value) for key, value in env.items() if value != ""}
 
 
-def build_command(settings, config_path, backend, discovery, display=None, app_id=APP_ID):
+def build_command(
+    settings, config_path, backend, discovery, display=None, app_id=APP_ID, screen_size=None
+):
     """Build the flatpak invocation as an argument list."""
     subcommand = "server" if settings["mode"] == "server" else "client"
-    env = build_environment(settings, backend, discovery, display=display)
+    env = build_environment(settings, backend, discovery, display=display, screen_size=screen_size)
 
     argv = ["flatpak", "run", "--user", "--command={0}".format(HELPER_COMMAND)]
     for key in sorted(env):

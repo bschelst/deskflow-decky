@@ -30,6 +30,7 @@ ALLOWED_FIELDS = (
     "socket_owner_ok",
     "socket_mode",
     "uinput_present",
+    "screen_size",
     "helper_installed",
     "helper_pid",
     "tls_enabled",

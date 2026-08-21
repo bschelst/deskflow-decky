@@ -1,4 +1,4 @@
-import { definePlugin, routerHook } from "@decky/api";
+import { addEventListener, definePlugin, removeEventListener, routerHook, toaster } from "@decky/api";
 import { ErrorBoundary, staticClasses } from "@decky/ui";
 import { FaKeyboard } from "react-icons/fa";
 
@@ -6,8 +6,28 @@ import { QuickAccessPanel } from "./components/QuickAccessPanel";
 import { DeskflowPage } from "./pages/DeskflowPage";
 import { PLUGIN_ROUTE } from "./routes";
 
+interface Notification {
+  title: string;
+  body: string;
+}
+
+const isNotification = (value: unknown): value is Notification =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as Notification).title === "string" &&
+  typeof (value as Notification).body === "string";
+
 export default definePlugin(() => {
   routerHook.addRoute(PLUGIN_ROUTE, DeskflowPage, { exact: false });
+
+  // Registered at plugin level rather than in the panel: a dropped connection matters
+  // most precisely when the Quick Access Menu is closed and you are in a game.
+  // The backend sends one of these per outage, not one per reconnect attempt.
+  const onNotify = (payload: unknown) => {
+    if (!isNotification(payload)) return;
+    toaster.toast({ title: payload.title, body: payload.body });
+  };
+  addEventListener<[unknown]>("deskflow_notify", onNotify);
 
   return {
     // staticClasses.Title keeps the header consistent with every other Decky plugin.
@@ -23,6 +43,7 @@ export default definePlugin(() => {
     ),
     icon: <FaKeyboard />,
     onDismount() {
+      removeEventListener<[unknown]>("deskflow_notify", onNotify);
       routerHook.removeRoute(PLUGIN_ROUTE);
     },
   };

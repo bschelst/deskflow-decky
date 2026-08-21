@@ -41,8 +41,11 @@ const validSettings: Settings = {
   socket_path_override: "",
   autostart_gaming_mode: false,
   reconnect_enabled: true,
+  notifications_enabled: true,
   reconnect_max_backoff_s: 30,
   pointer_sensitivity: 1.0,
+  screen_width: 0,
+  screen_height: 0,
   activation_mode: "manual",
   log_level: "info",
 };

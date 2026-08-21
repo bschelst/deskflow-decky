@@ -2,6 +2,7 @@ import { Field, Marquee, PanelSectionRow } from "@decky/ui";
 import type { FC } from "react";
 
 import type { Status } from "../api/types";
+import { Dot } from "./Dot";
 import {
   STATE_COLOUR,
   STATE_LABEL,
@@ -11,18 +12,9 @@ import {
   serverModeUnavailable,
 } from "../lib/format";
 
-/**
- * A coloured glyph beside the state word. The word carries the meaning; the colour is
- * advisory, because colour alone is not an accessible signal.
- *
- * Colour is the only style applied. docs/UI-SPEC.md §1 permits colour-only styling for
- * state indication and bans everything dimensional, so this uses a text glyph rather
- * than a sized-and-spaced box.
- */
+/** The state's glyph, using the same component the self-test rows use. */
 const StateDot: FC<{ state: Status["state"] }> = ({ state }) => (
-  <span aria-hidden="true" style={{ color: STATE_COLOUR[state] }}>
-    {"● "}
-  </span>
+  <Dot colour={STATE_COLOUR[state]} />
 );
 
 /**
