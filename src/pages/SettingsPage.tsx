@@ -20,13 +20,13 @@ import {
   runSelfTest,
   setSettings,
 } from "../api/backend";
-import type { HelperInfo, SelfTestCheck, SelfTestResult, Settings } from "../api/types";
+import type { HelperInfo, SelfTestResult, Settings } from "../api/types";
 import { ACTIVATION_MODES, INPUT_BACKENDS, LOG_LEVELS, MODES } from "../api/types";
 import { EditableTextField } from "../components/EditableTextField";
-import { Dot } from "../components/Dot";
 import { LogsModal } from "../components/LogsModal";
+import { SelfTestRows } from "../components/SelfTestRows";
 import { useDeskflowStatus } from "../hooks/useDeskflowStatus";
-import { BACKEND_LABEL, FAIL_COLOUR, MODE_LABEL, PASS_COLOUR } from "../lib/format";
+import { BACKEND_LABEL, MODE_LABEL } from "../lib/format";
 import { validateField } from "../lib/validate";
 
 const backendOptions = INPUT_BACKENDS.map((value) => ({
@@ -74,14 +74,6 @@ interface Notice {
  * findable at a glance and reads left-to-right. The dot is paired with wording in the
  * detail line, never colour alone.
  */
-const SelfTestRow: FC<{ check: SelfTestCheck }> = ({ check }) => (
-  <PanelSectionRow>
-    <Field label={check.label} description={check.detail} bottomSeparator="standard" focusable>
-      <Dot colour={check.ok ? PASS_COLOUR : FAIL_COLOUR} />
-      {check.ok ? "OK" : "Failed"}
-    </Field>
-  </PanelSectionRow>
-);
 
 export const SettingsPage: FC = () => {
   const { status } = useDeskflowStatus();
@@ -482,9 +474,7 @@ export const SettingsPage: FC = () => {
           </ButtonItem>
         </PanelSectionRow>
 
-        {(selfTest?.checks ?? []).map((check) => (
-          <SelfTestRow key={check.id} check={check} />
-        ))}
+        {selfTest ? <SelfTestRows checks={selfTest.checks} /> : null}
 
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={() => showModal(<LogsModal />)}>

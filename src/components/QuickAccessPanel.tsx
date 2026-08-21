@@ -20,11 +20,12 @@ import {
   startHelper,
   stopHelper,
 } from "../api/backend";
-import type { Status } from "../api/types";
+import type { SelfTestCheck, Status } from "../api/types";
 import { useAction, useDeskflowStatus } from "../hooks/useDeskflowStatus";
 import { truncate } from "../lib/format";
 import { PLUGIN_ROUTE } from "../routes";
 import { FingerprintModal } from "./FingerprintModal";
+import { SelfTestRows } from "./SelfTestRows";
 import { StatusRows } from "./StatusRows";
 
 const isRecoverable = (status: Status) =>
@@ -37,6 +38,7 @@ export const QuickAccessPanel: FC = () => {
   const { status, error, loading, refresh } = useDeskflowStatus();
   const [busy, perform, actionError] = useAction(refresh);
   const [note, setNote] = useState<string | null>(null);
+  const [checks, setChecks] = useState<SelfTestCheck[] | null>(null);
   // Guards against re-opening the dialog on every status poll while it is already up.
   const promptOpen = useRef(false);
 
@@ -155,12 +157,12 @@ export const QuickAccessPanel: FC = () => {
               void perform(async () => {
                 const result = await runSelfTest();
                 if (result.ok) {
+                  setChecks(result.data.checks);
                   const failed = result.data.checks.filter((check) => !check.ok);
                   setNote(
                     failed.length === 0
-                      ? `Self-test passed (${result.data.total} checks).`
-                      // Name what failed, not how many: the name is the actionable part.
-                      : `Needs attention: ${failed.map((c) => c.label).join(", ")}.`,
+                      ? `All ${result.data.total} checks passed.`
+                      : `${failed.length} of ${result.data.total} need attention.`,
                   );
                 }
                 return result;
@@ -170,6 +172,8 @@ export const QuickAccessPanel: FC = () => {
             Run self-test
           </ButtonItem>
         </PanelSectionRow>
+
+        {checks ? <SelfTestRows checks={checks} /> : null}
 
         {diagnostic ? (
           <PanelSectionRow>

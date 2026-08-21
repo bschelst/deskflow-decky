@@ -206,6 +206,17 @@ export const DocumentationPage: FC = () => (
     </PanelSection>
 
     <PanelSection title="Known limitations">
+      <Entry
+        term="The pointer is invisible until you click"
+        detail={
+          "Gamescope is started with --hide-cursor-delay 3000, so it hides the pointer " +
+          "after three idle seconds. Injected motion does not appear to reset that " +
+          "timer, while button events do — so the cursor reappears on a click. The flag " +
+          "comes from the Steam session, not from this plugin. Worth trying: turn off " +
+          "relativeMouseMoves in the server's options, which makes Deskflow send " +
+          "absolute positions instead of deltas."
+        }
+      />
       <Paragraph>
         Games that grab the pointer, or that switch capture mode during play, may
         behave inconsistently. Steam Input can also intercept events before they reach
