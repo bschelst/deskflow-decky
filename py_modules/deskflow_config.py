@@ -54,6 +54,8 @@ def render_ini(settings, cert_path):
         "coreMode={0}".format(core_mode),
         "port={0}".format(port),
         "computerName={0}".format(name),
+        # Deskflow's Wayland clipboard, which shells out to wl-copy/wl-paste.
+        "wlClipboard={0}".format(_bool(settings.get("clipboard_enabled", False))),
         "",
     ]
 

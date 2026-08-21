@@ -358,12 +358,14 @@ class Plugin:
 
         backend = resolve_backend(settings["input_backend"], discovery, display)
         screen_size = await self._resolve_screen_size()
+        wayland_display = os.environ.get("WAYLAND_DISPLAY")
         env = build_environment(
-            settings, backend, discovery, display=display, screen_size=screen_size
+            settings, backend, discovery, display=display, screen_size=screen_size,
+            wayland_display=wayland_display,
         )
         argv = build_command(
             settings, CONFIG_PATH, backend, discovery, display=display, app_id=APP_ID,
-            screen_size=screen_size,
+            screen_size=screen_size, wayland_display=wayland_display,
         )
         return backend, argv, env, discovery
 
@@ -1028,7 +1030,19 @@ class Plugin:
             "manually.".format(size[0], size[1], "detected" if auto else "set manually"),
         )
 
-        # 7. TLS material.
+        # 7. Clipboard, if asked for. It cannot work behind Gamescope, and silently
+        #    doing nothing would be the worst of both worlds.
+        if self._settings.get("clipboard_enabled"):
+            add(
+                "clipboard",
+                "Clipboard sharing",
+                not _is_gaming_mode(),
+                "not available in Gaming Mode: Gamescope has no data-control protocol"
+                if _is_gaming_mode()
+                else "available in Desktop Mode",
+            )
+
+        # 8. TLS material.
         if self._settings.get("tls_enabled"):
             add(
                 "certificate",

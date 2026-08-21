@@ -173,6 +173,7 @@ export function isSettings(value: unknown): value is Settings {
     isBool(value.autostart_gaming_mode) &&
     isBool(value.reconnect_enabled) &&
     isBool(value.notifications_enabled) &&
+    isBool(value.clipboard_enabled) &&
     isInt(value.reconnect_max_backoff_s) &&
     isNumber(value.pointer_sensitivity) &&
     isInt(value.screen_width) &&

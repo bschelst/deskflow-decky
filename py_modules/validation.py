@@ -248,6 +248,7 @@ FIELDS = {
     "autostart_gaming_mode": (False, _boolean),
     "reconnect_enabled": (True, _boolean),
     "notifications_enabled": (True, _boolean),
+    "clipboard_enabled": (False, _boolean),
     "reconnect_max_backoff_s": (30, _backoff),
     "pointer_sensitivity": (1.0, _sensitivity),
     "screen_width": (0, _screen_extent),

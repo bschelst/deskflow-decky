@@ -42,6 +42,7 @@ const validSettings: Settings = {
   autostart_gaming_mode: false,
   reconnect_enabled: true,
   notifications_enabled: true,
+  clipboard_enabled: false,
   reconnect_max_backoff_s: 30,
   pointer_sensitivity: 1.0,
   screen_width: 0,
