@@ -1,0 +1,87 @@
+From 3649a15a1f97e042f4489c25cb30bcf501713b1f Mon Sep 17 00:00:00 2001
+From: Bart Schelstraete <bart@schelstraete.org>
+Date: Fri, 21 Aug 2026 23:17:28 +0200
+Subject: [PATCH] feat: allow selecting the direct libei socket backend
+
+EiScreen already implements both the XDG RemoteDesktop portal backend and the
+direct libei socket backend (ei_setup_backend_socket, which reads LIBEI_SOCKET),
+but ClientApp and ServerApp both pass usePortal=true unconditionally, so the
+socket path is unreachable.
+
+That matters on compositors which run an EIS server but provide no RemoteDesktop
+portal backend. gamescope is the motivating case: it creates
+$XDG_RUNTIME_DIR/<display>-ei and exports LIBEI_SOCKET, but there is no portal
+behind it, so Deskflow cannot inject input there at all today.
+
+Add DESKFLOW_EI_BACKEND=socket to opt into the socket backend. It defaults to
+portal, so existing behaviour is unchanged, and the resolved choice is logged.
+
+Note that the socket backend does not support reconnection (see the existing
+comment in EiScreen); a supervising process is expected to restart the client.
+---
+ src/lib/common/PlatformInfo.h  | 15 +++++++++++++++
+ src/lib/deskflow/ClientApp.cpp |  5 +++--
+ src/lib/deskflow/ServerApp.cpp |  5 +++--
+ 3 files changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/src/lib/common/PlatformInfo.h b/src/lib/common/PlatformInfo.h
+index 7f4c550..ee75cbb 100644
+--- a/src/lib/common/PlatformInfo.h
++++ b/src/lib/common/PlatformInfo.h
+@@ -17,6 +17,21 @@ inline bool isWayland()
+   return qEnvironmentVariable("XDG_SESSION_TYPE") == QStringLiteral("wayland");
+ }
+ 
++/**
++ * @brief eiBackendIsSocket
++ * @return Returns true if DESKFLOW_EI_BACKEND requests the direct libei socket
++ * backend rather than the XDG RemoteDesktop portal.
++ *
++ * EiScreen already supports both, but the portal is otherwise the only reachable
++ * choice. Some compositors expose an EIS socket via LIBEI_SOCKET while providing no
++ * RemoteDesktop portal backend at all -- notably gamescope, where the portal path
++ * cannot work. Defaults to the portal, so existing behaviour is unchanged.
++ */
++inline bool eiBackendIsSocket()
++{
++  return qEnvironmentVariable("DESKFLOW_EI_BACKEND").toLower() == QStringLiteral("socket");
++}
++
+ /**
+  * @brief isWindows
+  * @return Returns true if we are running on windows
+diff --git a/src/lib/deskflow/ClientApp.cpp b/src/lib/deskflow/ClientApp.cpp
+index 191661d..9e1b9f5 100644
+--- a/src/lib/deskflow/ClientApp.cpp
++++ b/src/lib/deskflow/ClientApp.cpp
+@@ -117,8 +117,9 @@ deskflow::Screen *ClientApp::createScreen()
+ #if defined(WINAPI_XWINDOWS) or defined(WINAPI_LIBEI)
+   if (deskflow::platform::isWayland()) {
+ #if WINAPI_LIBEI
+-    LOG_INFO("using ei screen for wayland");
+-    return new deskflow::Screen(new deskflow::EiScreen(false, getEvents(), true), getEvents());
++    const bool usePortal = !deskflow::platform::eiBackendIsSocket();
++    LOG_INFO("using ei screen for wayland, ei backend: %s", usePortal ? "portal" : "socket");
++    return new deskflow::Screen(new deskflow::EiScreen(false, getEvents(), usePortal), getEvents());
+ #else
+     throw XNoEiSupport();
+ #endif
+diff --git a/src/lib/deskflow/ServerApp.cpp b/src/lib/deskflow/ServerApp.cpp
+index 2e69adc..519961f 100644
+--- a/src/lib/deskflow/ServerApp.cpp
++++ b/src/lib/deskflow/ServerApp.cpp
+@@ -408,8 +408,9 @@ deskflow::Screen *ServerApp::createScreen()
+ #if defined(WINAPI_XWINDOWS) or defined(WINAPI_LIBEI)
+   if (deskflow::platform::isWayland()) {
+ #if WINAPI_LIBEI
+-    LOG_INFO("using ei screen for wayland");
+-    return new deskflow::Screen(new deskflow::EiScreen(true, getEvents(), true), getEvents());
++    const bool usePortal = !deskflow::platform::eiBackendIsSocket();
++    LOG_INFO("using ei screen for wayland, ei backend: %s", usePortal ? "portal" : "socket");
++    return new deskflow::Screen(new deskflow::EiScreen(true, getEvents(), usePortal), getEvents());
+ #else
+     throw XNoEiSupport();
+ #endif
+-- 
+2.53.0
+

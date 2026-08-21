@@ -139,6 +139,25 @@ def test_libei_backend_without_a_socket_is_refused():
         build_environment(settings(), "gamescope-libei", missing())
 
 
+def test_path_is_not_forwarded_into_the_sandbox():
+    # --env=PATH would override the sandbox's own PATH, which is what makes /app/bin
+    # reachable; the helper then cannot be executed at all.
+    argv = build_command(settings(), "/c", "gamescope-libei", found())
+    assert not any(part.startswith("--env=PATH=") for part in argv)
+
+
+def test_path_is_still_present_for_the_launching_process():
+    # ...but it is needed outside the sandbox so `flatpak` itself can be located.
+    env = build_environment(settings(), "gamescope-libei", found())
+    assert env.get("PATH")
+
+
+def test_other_variables_are_still_forwarded():
+    argv = build_command(settings(), "/c", "gamescope-libei", found())
+    assert any(part.startswith("--env=LIBEI_SOCKET=") for part in argv)
+    assert any(part == "--env=DESKFLOW_EI_BACKEND=socket" for part in argv)
+
+
 def test_environment_values_are_all_strings():
     env = build_environment(settings(), "gamescope-libei", found())
     assert all(isinstance(k, str) and isinstance(v, str) for k, v in env.items())

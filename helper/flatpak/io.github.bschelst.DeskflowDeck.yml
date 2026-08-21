@@ -1,21 +1,28 @@
 # Patched Deskflow for SteamOS Gaming Mode.
 #
-# Derived from upstream's deploy/linux/flatpak/org.deskflow.deskflow.yml. It carries a
-# DIFFERENT application id on purpose: reusing org.deskflow.deskflow would collide with
-# a user's Flathub install of the real thing.
+# Derived from upstream's deploy/linux/flatpak/org.deskflow.deskflow.yml at v1.26.0.
+# Keep it in step with upstream when bumping the Deskflow tag: the dependency versions
+# and their commit pins below are upstream's choices, not ours, and diverging from them
+# is how a build starts failing in ways that are nothing to do with this project.
 #
-# See ../README.md for what the patch does and why every permission below exists.
-id: io.github.bschelst.DeskflowDeck
+# Deliberate deviations from upstream, and only these:
+#   * a different app id, so this cannot collide with a Flathub install of the real
+#     Deskflow;
+#   * command is deskflow-core (the engine) rather than deskflow (the Qt GUI);
+#   * the deskflow module builds from a pinned git tag plus our patch, instead of the
+#     working directory, so the build is reproducible;
+#   * --device=dri and --talk-name=org.kde.StatusNotifierWatcher are dropped: a
+#     headless engine needs neither a GPU nor a tray icon.
+#
+# See ../README.md for what the patch does and why each permission exists.
+app-id: io.github.bschelst.DeskflowDeck
 runtime: org.kde.Platform
-runtime-version: "6.11"
+runtime-version: "6.10"
 sdk: org.kde.Sdk
-
-# The engine, not the Qt GUI. The plugin also passes --command=deskflow-core explicitly
-# so this default is not load-bearing.
 command: deskflow-core
 
 finish-args:
-  # The Deskflow protocol (TCP 24800).
+  # The Deskflow protocol itself (TCP 24800).
   - --share=network
   # Required alongside the display sockets for normal Qt operation.
   - --share=ipc
@@ -29,48 +36,84 @@ finish-args:
   #
   # Access to Gamescope's EIS socket is NOT granted here. The plugin passes
   # --filesystem=<the one discovered socket path> at launch, so the opening is scoped
-  # to a single socket and exists only while the helper is running.
+  # to a single socket and exists only while the helper runs.
+
+cleanup:
+  - /include
+  - "*.a"
+  - /bin/ei-debug-events
+  - /lib/cmake
+  - /lib/pkgconfig
+  - /share/pkgconfig
+  - /share/cmake
+  - /share/doc
+  - /share/gir-1.0
+  - /lib/girepository-1.0
 
 modules:
+  - name: python3-Jinja2
+    buildsystem: simple
+    build-commands:
+      - pip3 install --verbose --exists-action=i --no-index --find-links="file://${PWD}"
+        --prefix=${FLATPAK_DEST} --no-build-isolation Jinja2
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
+        sha256: 85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
+      - type: file
+        url: https://files.pythonhosted.org/packages/87/5b/aae44c6655f3801e81aa3eef09dbbf012431987ba564d7231722f68df02d/MarkupSafe-2.1.5.tar.gz
+        sha256: d283d37a890ba4c1ae73ffadf8046435c76e7bc2247bbb63c00bd1a709c6544b
+    cleanup:
+      - "*"
+
   - name: libei
     buildsystem: meson
     config-opts:
-      - -Dtests=disabled
       - -Ddocumentation=[]
-      - -Dliboeffis=enabled
+      - -Dtests=disabled
+      - -Dliboeffis=disabled
     sources:
       - type: git
-        url: https://gitlab.freedesktop.org/libinput/libei.git
-        tag: "1.6.0"
+        url: https://gitlab.freedesktop.org/libinput/libei
+        tag: 1.5.0
+        commit: 19b64535408aa47abbc8151bc2c925afd6583851
 
   - name: libportal
     buildsystem: meson
     config-opts:
-      - -Dbackend-qt6=enabled
-      - -Dbackend-gtk3=disabled
-      - -Dbackend-gtk4=disabled
       - -Ddocs=false
       - -Dtests=false
+      - -Dportal-tests=false
       - -Dvapi=false
-      - -Dintrospection=false
+      - -Dbackend-qt6=auto
     sources:
       - type: git
         url: https://github.com/flatpak/libportal.git
-        tag: "0.10.0"
+        tag: 0.9.1
+        commit: 8f5dc8d192f6e31dafe69e35219e3b707bde71ce
+      - type: patch
+        path: libportal-qt69.patch
+
+  - name: gtest
+    buildsystem: cmake-ninja
+    sources:
+      - type: git
+        url: https://github.com/google/googletest.git
+        tag: v1.17.0
+        commit: 52eb8108c5bdec04579160ae17225d66034bd723
+    cleanup:
+      - "*"
 
   - name: deskflow
     buildsystem: cmake-ninja
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
-      - -DBUILD_TESTS=OFF
     sources:
-      # Pinned to a tag, never a moving branch: a build that cannot be reproduced
-      # cannot be audited.
+      # Pinned to a tag and its commit, never a moving branch: a build that cannot be
+      # reproduced cannot be audited.
       - type: git
         url: https://github.com/deskflow/deskflow.git
         tag: v1.26.0
-        # commit: <fill in the tag's commit sha before releasing>
-      # Generate this against the pinned tag; see ../README.md. It is absent until it
-      # has actually been applied to the real tree and verified.
+        commit: 82fd4b78e4c8271a77420937b829f21d1cbe623d
       - type: patch
         path: ../patches/0001-add-ei-backend-selection.patch

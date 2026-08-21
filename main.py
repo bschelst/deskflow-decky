@@ -46,10 +46,23 @@ SETTINGS_DIR = decky.DECKY_PLUGIN_SETTINGS_DIR
 RUNTIME_DIR = decky.DECKY_PLUGIN_RUNTIME_DIR
 LOG_DIR = decky.DECKY_PLUGIN_LOG_DIR
 
-CONFIG_PATH = os.path.join(RUNTIME_DIR, "Deskflow.conf")
-TLS_DIR = os.path.join(SETTINGS_DIR, "tls")
+# The helper runs inside a flatpak sandbox and cannot see Decky's directories at all.
+# Anything it must READ therefore lives in its own app config tree, which the sandbox
+# always has access to -- writing there needs no extra --filesystem grant, and widening
+# the sandbox to reach ~/homebrew would be a much worse trade.
+#
+# Found the hard way on hardware: with the config under RUNTIME_DIR, QSettings pointed
+# at an unreadable path, returned empty values, and the helper died with
+# "No server addresses configured" while claiming to have loaded the file.
+HELPER_CONFIG_DIR = os.path.join(
+    decky.HOME, ".var", "app", APP_ID, "config", "Deskflow"
+)
+CONFIG_PATH = os.path.join(HELPER_CONFIG_DIR, "Deskflow.conf")
+TLS_DIR = os.path.join(HELPER_CONFIG_DIR, "tls")
 CERT_PATH = os.path.join(TLS_DIR, "deskflow.pem")
 TRUSTED_SERVERS_PATH = os.path.join(TLS_DIR, "trusted-servers")
+
+# Plugin-owned state the helper never reads stays in Decky's own directories.
 PINNED_HOSTS_PATH = os.path.join(SETTINGS_DIR, "pinned-hosts.json")
 RELAY_PATH = os.path.join(RUNTIME_DIR, "eis-socket")
 
@@ -308,6 +321,12 @@ class Plugin:
 
     def _on_helper_line(self, line):
         """Observer for helper output. Runs in the drain task; must not raise."""
+        # Log it. Without this the helper's own diagnosis of a failure is invisible --
+        # the plugin could only report "exited with code 1" while the actual reason
+        # (a missing binary, an unreadable config) went nowhere.
+        if line.strip():
+            decky.logger.info("helper: %s", redact_line(line))
+
         self._watcher.feed(line)
         if self._watcher.reported_backend is not None:
             self._resolved_backend_reported = self._watcher.reported_backend

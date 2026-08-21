@@ -30,6 +30,14 @@ HELPER_COMMAND = "deskflow-core"
 BACKENDS_NEEDING_SOCKET = ("gamescope-libei",)
 _FORBIDDEN_IN_ARGUMENT = ("\n", "\r", "\x00")
 
+#: Present in the launching process's environment but NOT forwarded into the sandbox.
+#:
+#: PATH is needed outside so execvpe can find the `flatpak` binary, but forwarding it
+#: with --env=PATH overrides the sandbox's own PATH, which is what makes /app/bin
+#: reachable. Observed on hardware as `bwrap: execvp deskflow-core: No such file or
+#: directory` -- the helper is in /app/bin, and our PATH did not include it.
+NOT_FORWARDED_TO_SANDBOX = frozenset({"PATH"})
+
 INITIAL_BACKOFF_S = 1
 BACKOFF_FACTOR = 2
 TERMINATE_GRACE_S = 5
@@ -152,6 +160,8 @@ def build_command(settings, config_path, backend, discovery, display=None, app_i
 
     argv = ["flatpak", "run", "--user", "--command={0}".format(HELPER_COMMAND)]
     for key in sorted(env):
+        if key in NOT_FORWARDED_TO_SANDBOX:
+            continue
         argv.append("--env={0}={1}".format(key, _clean(key, env[key])))
 
     if backend in BACKENDS_NEEDING_SOCKET:
