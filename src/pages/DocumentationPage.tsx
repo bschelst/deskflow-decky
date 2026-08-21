@@ -162,6 +162,43 @@ export const DocumentationPage: FC = () => (
       />
     </PanelSection>
 
+    <PanelSection title="Locking input to one screen">
+      <Paragraph>
+        Deskflow can pin the pointer to whichever screen it is on, so it cannot cross to
+        another machine until you unlock it. This is the way out if the pointer ends up
+        somewhere you cannot easily get it back from.
+      </Paragraph>
+      <Entry
+        term="Scroll Lock"
+        detail={
+          "Works out of the box. Deskflow registers Scroll Lock as a lock/unlock toggle " +
+          "automatically, unless disableLockToScreen is turned on in the server's " +
+          "options or you have defined your own lock action."
+        }
+      />
+      <Entry
+        term="Your own shortcut"
+        detail={
+          "Add a hotkey to the options section of the server's configuration, for " +
+          "example: keystroke(alt+shift+l) = lockCursorToScreen(toggle). The argument " +
+          "may be on, off or toggle. Defining one replaces the automatic Scroll Lock " +
+          "binding rather than adding to it."
+        }
+      />
+      <Entry
+        term="Start locked"
+        detail={
+          "Set defaultLockToScreenState = true in the server's options and input stays " +
+          "on the screen it starts on until you unlock it."
+        }
+      />
+      <Paragraph>
+        The shortcut is handled by the server, because that is where the keyboard is.
+        The plugin's own 'Input enabled' toggle does something similar from the Deck
+        side: it stops input being delivered without dropping the connection.
+      </Paragraph>
+    </PanelSection>
+
     <PanelSection title="Input backends">
       <Entry
         term="Gamescope (libei)"

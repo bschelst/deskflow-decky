@@ -50,6 +50,13 @@ Both are against v1.26.0 and could go upstream as they are.
 - Works out the screen size by itself
 - Gives up on auto starting if the helper keeps crashing, instead of looping forever
 
+### Getting the pointer back
+
+Scroll Lock locks and unlocks the pointer to whatever screen its on. Deskflow sets that
+up by itself, you dont have to configure anything. You can also bind your own key in the
+server options with keystroke(alt+shift+l) = lockCursorToScreen(toggle), or start locked
+with defaultLockToScreenState = true.
+
 ### Known problems
 
 - The mouse cursor is invisible until you click. Thats gamescope hiding it after 3
