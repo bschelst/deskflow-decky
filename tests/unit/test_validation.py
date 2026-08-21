@@ -308,16 +308,18 @@ def test_fingerprint_checking_may_be_off_when_tls_is_off():
     assert result["tls_enabled"] is False
 
 
-def test_client_mode_requires_a_server_host():
-    with pytest.raises(ValidationError) as exc:
-        validate_patch({"mode": "client", "server_host": ""}, base())
-    assert exc.value.field == "server_host"
+def test_client_mode_without_a_host_is_allowed_at_configuration_time():
+    # Enforcing this here deadlocked the UI on hardware: the server-address field is
+    # only shown in client mode, so refusing the switch back left no way to enter one.
+    # The requirement is enforced at start time instead (main.py refuses to launch).
+    result = validate_patch({"mode": "client", "server_host": ""}, base())
+    assert result["mode"] == "client"
+    assert result["server_host"] == ""
 
 
-def test_switching_to_client_mode_without_a_host_is_rejected():
+def test_switching_back_to_client_mode_without_a_host_is_allowed():
     current = dict(DEFAULTS, mode="server", server_host="")
-    with pytest.raises(ValidationError):
-        validate_patch({"mode": "client"}, current)
+    assert validate_patch({"mode": "client"}, current)["mode"] == "client"
 
 
 def test_server_mode_does_not_require_a_host():

@@ -272,15 +272,17 @@ def _rule_tls_requires_verification(settings):
     return None
 
 
-def _rule_client_needs_host(settings):
-    if settings["mode"] == "client" and settings["server_host"] == "":
-        return ("server_host", "is required when this Deck runs as a client")
-    return None
-
+# "client mode needs a server host" is deliberately NOT enforced here.
+#
+# Enforcing it at configuration time creates a deadlock the hardware test hit: the
+# server-address field is only shown in client mode, so once you switch to server mode
+# with no host set, switching back is rejected and there is no way to enter one. The
+# requirement is real, but it belongs at *start* time -- main.py refuses to launch a
+# client with no host, which is the moment it actually matters. An unconfigured install
+# is a legitimate state to sit in; DEFAULTS ship exactly that way.
 
 _CROSS_FIELD_RULES = (
     (frozenset({"tls_enabled", "check_peer_fingerprints"}), _rule_tls_requires_verification),
-    (frozenset({"mode", "server_host"}), _rule_client_needs_host),
 )
 
 

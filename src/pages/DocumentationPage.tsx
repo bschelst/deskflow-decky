@@ -1,5 +1,5 @@
 import { Field, PanelSection, PanelSectionRow } from "@decky/ui";
-import type { FC, ReactNode } from "react";
+import type { FC } from "react";
 
 import type { ErrorCode } from "../api/types";
 
@@ -10,9 +10,23 @@ import type { ErrorCode } from "../api/types";
  * render a help page would be an egress nobody asked for.
  */
 
-const Paragraph: FC<{ children: ReactNode }> = ({ children }) => (
+/**
+ * Prose spans the full row width.
+ *
+ * `Field` puts children in the right-hand control column and reserves the left for a
+ * label, so a paragraph passed as children renders beside a permanently empty gutter.
+ * The `description` slot is the full-width one.
+ */
+const Paragraph: FC<{ children: string }> = ({ children }) => (
   <PanelSectionRow>
-    <Field bottomSeparator="none">{children}</Field>
+    <Field description={children} bottomSeparator="none" />
+  </PanelSectionRow>
+);
+
+/** A named thing and its explanation: name on the left, prose full-width beneath. */
+const Entry: FC<{ term: string; detail: string }> = ({ term, detail }) => (
+  <PanelSectionRow>
+    <Field label={term} description={detail} bottomSeparator="standard" />
   </PanelSectionRow>
 );
 
@@ -124,20 +138,27 @@ export const DocumentationPage: FC = () => (
     </PanelSection>
 
     <PanelSection title="Input backends">
-      <Paragraph>
-        <b>Gamescope (libei)</b> sends input straight into the Gamescope compositor
-        through its own input socket. This is the one that works in Gaming Mode and is
-        what Automatic prefers.
-      </Paragraph>
-      <Paragraph>
-        <b>XWayland (XTest)</b> is a fallback that goes through Gamescope's X server.
-        Pointer behaviour can be unreliable, particularly with cursor grabbing.
-      </Paragraph>
-      <Paragraph>
-        <b>uinput</b> creates virtual kernel input devices. It is a last resort: it
-        needs extra permissions and delivers input to every session rather than to
-        Gamescope specifically.
-      </Paragraph>
+      <Entry
+        term="Gamescope (libei)"
+        detail={
+          "Sends input straight into the Gamescope compositor through its own input " +
+          "socket. This is the one that works in Gaming Mode, and what Automatic prefers."
+        }
+      />
+      <Entry
+        term="XWayland (XTest)"
+        detail={
+          "A fallback that goes through Gamescope's X server. Pointer behaviour can be " +
+          "unreliable, particularly with cursor grabbing."
+        }
+      />
+      <Entry
+        term="uinput"
+        detail={
+          "Creates virtual kernel input devices. A last resort: it needs extra " +
+          "permissions and delivers input to every session rather than to Gamescope."
+        }
+      />
     </PanelSection>
 
     <PanelSection title="Server mode">
@@ -151,11 +172,11 @@ export const DocumentationPage: FC = () => (
 
     <PanelSection title="Troubleshooting">
       {TROUBLESHOOTING.map((entry) => (
-        <PanelSectionRow key={entry.code}>
-          <Field label={entry.code} description={entry.fix} bottomSeparator="standard">
-            {entry.meaning}
-          </Field>
-        </PanelSectionRow>
+        <Entry
+          key={entry.code}
+          term={entry.code}
+          detail={`${entry.meaning} ${entry.fix}`}
+        />
       ))}
     </PanelSection>
 

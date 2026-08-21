@@ -86,9 +86,10 @@ export const QuickAccessPanel: FC = () => {
           </Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <Field bottomSeparator="none">
-            {error?.message ?? "The plugin backend did not respond."}
-          </Field>
+          <Field
+            description={error?.message ?? "The plugin backend did not respond."}
+            bottomSeparator="none"
+          />
         </PanelSectionRow>
       </PanelSection>
     );
@@ -131,7 +132,7 @@ export const QuickAccessPanel: FC = () => {
 
         <PanelSectionRow>
           <ButtonItem
-            layout="inline"
+            layout="below"
             disabled={busy || !isRecoverable(status)}
             onClick={() => {
               setNote(null);
@@ -146,7 +147,7 @@ export const QuickAccessPanel: FC = () => {
       <PanelSection title="Diagnostics">
         <PanelSectionRow>
           <ButtonItem
-            layout="inline"
+            layout="below"
             disabled={busy}
             onClick={() =>
               void perform(async () => {
@@ -169,14 +170,14 @@ export const QuickAccessPanel: FC = () => {
 
         {diagnostic ? (
           <PanelSectionRow>
-            <Field bottomSeparator="none">{truncate(diagnostic)}</Field>
+            <Field description={truncate(diagnostic)} bottomSeparator="none" />
           </PanelSectionRow>
         ) : null}
       </PanelSection>
 
       <PanelSection>
         <PanelSectionRow>
-          <ButtonItem layout="inline" onClick={() => Navigation.Navigate(PLUGIN_ROUTE)}>
+          <ButtonItem layout="below" onClick={() => Navigation.Navigate(PLUGIN_ROUTE)}>
             Settings, docs &amp; about
           </ButtonItem>
         </PanelSectionRow>

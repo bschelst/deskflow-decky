@@ -30,6 +30,10 @@ export const STATE_COLOUR: Record<HelperStateName, string> = {
   error: "#c0392b",
 };
 
+/** Pass/fail colours for self-test rows. Paired with a ✓/✗ glyph, never colour alone. */
+export const PASS_COLOUR = "#5ba32b";
+export const FAIL_COLOUR = "#c0392b";
+
 export const BACKEND_LABEL: Record<InputBackend, string> = {
   auto: "Automatic",
   "gamescope-libei": "Gamescope (libei)",

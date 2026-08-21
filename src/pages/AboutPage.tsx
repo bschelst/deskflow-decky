@@ -81,7 +81,7 @@ export const AboutPage: FC = () => {
       <PanelSection title="Links">
         <PanelSectionRow>
           <ButtonItem
-            layout="inline"
+            layout="below"
             onClick={() => Navigation.NavigateToExternalWeb(REPOSITORY_URL)}
           >
             View on GitHub
@@ -89,7 +89,7 @@ export const AboutPage: FC = () => {
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem
-            layout="inline"
+            layout="below"
             onClick={() => Navigation.NavigateToExternalWeb(ISSUES_URL)}
           >
             Report an issue
@@ -97,7 +97,7 @@ export const AboutPage: FC = () => {
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem
-            layout="inline"
+            layout="below"
             onClick={() => Navigation.NavigateToExternalWeb(DESKFLOW_URL)}
           >
             The Deskflow project

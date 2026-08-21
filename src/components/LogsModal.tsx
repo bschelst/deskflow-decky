@@ -24,20 +24,20 @@ export const LogsModal: FC<{ closeModal?: () => void }> = ({ closeModal }) => {
 
       {error !== null ? (
         <PanelSectionRow>
-          <Field bottomSeparator="none">{error}</Field>
+          <Field description={error} bottomSeparator="none" />
         </PanelSectionRow>
       ) : null}
 
       {lines !== null && lines.length === 0 ? (
         <PanelSectionRow>
-          <Field bottomSeparator="none">No log entries yet.</Field>
+          <Field description="No log entries yet." bottomSeparator="none" />
         </PanelSectionRow>
       ) : null}
 
       {(lines ?? []).map((line, index) => (
         // Log lines have no stable identity; index is the honest key here.
         <PanelSectionRow key={index}>
-          <Field bottomSeparator="none">{line}</Field>
+          <Field description={line} bottomSeparator="none" />
         </PanelSectionRow>
       ))}
     </ModalRoot>

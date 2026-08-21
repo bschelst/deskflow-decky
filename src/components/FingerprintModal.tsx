@@ -57,14 +57,17 @@ export const FingerprintModal: FC<{
       ) : null}
 
       <PanelSectionRow>
-        <Field bottomSeparator="none">
-          {changed
+        <Field
+          bottomSeparator="none"
+          description={
+            changed
             ? "You trusted a different certificate for this server before. That can mean " +
               "the server was reinstalled — or that something is intercepting the " +
               "connection. Do not accept this unless you know which."
             : "Compare this fingerprint against the one shown on the server before " +
-              "accepting. Accepting trusts this certificate for future connections."}
-        </Field>
+              "accepting. Accepting trusts this certificate for future connections."
+          }
+        />
       </PanelSectionRow>
     </ConfirmModal>
   );

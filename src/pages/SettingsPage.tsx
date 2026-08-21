@@ -5,7 +5,6 @@ import {
   PanelSection,
   PanelSectionRow,
   SliderField,
-  TextField,
   ToggleField,
   showModal,
 } from "@decky/ui";
@@ -21,11 +20,12 @@ import {
   runSelfTest,
   setSettings,
 } from "../api/backend";
-import { LogsModal } from "../components/LogsModal";
 import type { HelperInfo, SelfTestCheck, Settings } from "../api/types";
 import { ACTIVATION_MODES, INPUT_BACKENDS, LOG_LEVELS, MODES } from "../api/types";
+import { EditableTextField } from "../components/EditableTextField";
+import { LogsModal } from "../components/LogsModal";
 import { useDeskflowStatus } from "../hooks/useDeskflowStatus";
-import { BACKEND_LABEL, MODE_LABEL } from "../lib/format";
+import { BACKEND_LABEL, FAIL_COLOUR, MODE_LABEL, PASS_COLOUR } from "../lib/format";
 import { validateField } from "../lib/validate";
 
 const backendOptions = INPUT_BACKENDS.map((value) => ({
@@ -44,6 +44,30 @@ const logLevelOptions = LOG_LEVELS.map((value) => ({
   data: value,
   label: value.charAt(0).toUpperCase() + value.slice(1),
 }));
+
+/** Prose row. `description` spans the full width; children would sit in the right
+ *  control column and leave the label gutter empty. */
+const Note: FC<{ children: string }> = ({ children }) => (
+  <PanelSectionRow>
+    <Field description={children} bottomSeparator="none" />
+  </PanelSectionRow>
+);
+
+const SelfTestRow: FC<{ check: SelfTestCheck }> = ({ check }) => (
+  <PanelSectionRow>
+    <Field
+      // Status lives in the label so it reads left-to-right. The glyph carries the
+      // meaning; the colour reinforces it.
+      label={
+        <span style={{ color: check.ok ? PASS_COLOUR : FAIL_COLOUR }}>
+          {check.ok ? "✓" : "✗"} {check.id}
+        </span>
+      }
+      description={check.detail}
+      bottomSeparator="standard"
+    />
+  </PanelSectionRow>
+);
 
 export const SettingsPage: FC = () => {
   const { status } = useDeskflowStatus();
@@ -80,30 +104,27 @@ export const SettingsPage: FC = () => {
    * Frontend validation is for immediate feedback only. The backend re-validates and
    * is the authority; a value that passes here can still be rejected there.
    */
-  const commit = useCallback(
-    async (patch: Partial<Settings>) => {
-      const [field] = Object.keys(patch);
-      const localProblem = validateField(field as keyof Settings, Object.values(patch)[0]);
-      if (localProblem) {
-        setFieldErrors((current) => ({ ...current, [field]: localProblem }));
-        return;
-      }
+  const commit = useCallback(async (patch: Partial<Settings>) => {
+    const [field] = Object.keys(patch);
+    const localProblem = validateField(field as keyof Settings, Object.values(patch)[0]);
+    if (localProblem) {
+      setFieldErrors((current) => ({ ...current, [field]: localProblem }));
+      return;
+    }
 
-      const result = await setSettings(patch);
-      if (result.ok) {
-        setLocal(result.data);
-        setFieldErrors((current) => {
-          const next = { ...current };
-          delete next[field];
-          return next;
-        });
-        setBanner(null);
-      } else {
-        setFieldErrors((current) => ({ ...current, [field]: result.error.message }));
-      }
-    },
-    [],
-  );
+    const result = await setSettings(patch);
+    if (result.ok) {
+      setLocal(result.data);
+      setFieldErrors((current) => {
+        const next = { ...current };
+        delete next[field];
+        return next;
+      });
+      setBanner(null);
+    } else {
+      setFieldErrors((current) => ({ ...current, [field]: result.error.message }));
+    }
+  }, []);
 
   if (settings === null) {
     return <PanelSection title="Settings" spinner />;
@@ -115,9 +136,7 @@ export const SettingsPage: FC = () => {
     <>
       {banner ? (
         <PanelSection>
-          <PanelSectionRow>
-            <Field bottomSeparator="none">{banner}</Field>
-          </PanelSectionRow>
+          <Note>{banner}</Note>
         </PanelSection>
       ) : null}
 
@@ -125,7 +144,10 @@ export const SettingsPage: FC = () => {
         <PanelSectionRow>
           <DropdownItem
             label="Mode"
-            description="Client receives input from another computer. Server shares this Deck's own input."
+            description={
+              fieldErrors.mode ??
+              "Client receives input from another computer. Server shares this Deck's own input."
+            }
             rgOptions={modeOptions}
             selectedOption={settings.mode}
             onChange={(option) => void commit({ mode: option.data })}
@@ -133,33 +155,31 @@ export const SettingsPage: FC = () => {
         </PanelSectionRow>
 
         {serverModeInGamingMode ? (
-          <PanelSectionRow>
-            <Field bottomSeparator="none">
-              Server mode cannot capture input in Gaming Mode, because Gamescope
-              provides no input-capture portal. Switch to Desktop Mode to use it.
-            </Field>
-          </PanelSectionRow>
+          <Note>
+            Server mode cannot capture input in Gaming Mode, because Gamescope provides no
+            input-capture portal. Switch to Desktop Mode to use it.
+          </Note>
         ) : null}
 
         {settings.mode === "client" ? (
           <PanelSectionRow>
-            <TextField
+            <EditableTextField
               label="Server address"
               description={fieldErrors.server_host ?? "Hostname or IP of the Deskflow server."}
               value={settings.server_host}
-              onBlur={(event) => void commit({ server_host: event.currentTarget.value.trim() })}
+              onCommit={(value) => void commit({ server_host: value })}
             />
           </PanelSectionRow>
         ) : null}
 
         <PanelSectionRow>
-          <TextField
+          <EditableTextField
             label="Port"
             mustBeNumeric
             description={fieldErrors.server_port ?? "Deskflow's default is 24800."}
             value={String(settings.server_port)}
-            onBlur={(event) => {
-              const parsed = Number.parseInt(event.currentTarget.value, 10);
+            onCommit={(value) => {
+              const parsed = Number.parseInt(value, 10);
               // Send a number, never a string: the backend refuses to coerce.
               if (Number.isInteger(parsed)) void commit({ server_port: parsed });
               else setFieldErrors((c) => ({ ...c, server_port: "Must be a whole number." }));
@@ -168,11 +188,11 @@ export const SettingsPage: FC = () => {
         </PanelSectionRow>
 
         <PanelSectionRow>
-          <TextField
+          <EditableTextField
             label="This Deck's name"
             description={fieldErrors.client_name ?? "How this Deck appears to the server."}
             value={settings.client_name}
-            onBlur={(event) => void commit({ client_name: event.currentTarget.value.trim() })}
+            onCommit={(value) => void commit({ client_name: value })}
           />
         </PanelSectionRow>
       </PanelSection>
@@ -183,13 +203,7 @@ export const SettingsPage: FC = () => {
             label="Use TLS"
             description="Encrypt the connection. Leave this on unless you know why you are turning it off."
             checked={settings.tls_enabled}
-            onChange={(checked) =>
-              void commit(
-                checked
-                  ? { tls_enabled: true }
-                  : { tls_enabled: false },
-              )
-            }
+            onChange={(checked) => void commit({ tls_enabled: checked })}
           />
         </PanelSectionRow>
 
@@ -207,6 +221,12 @@ export const SettingsPage: FC = () => {
           />
         </PanelSectionRow>
 
+        {!settings.tls_enabled ? (
+          <Note>
+            TLS is off. Input from the server travels unencrypted over your network.
+          </Note>
+        ) : null}
+
         <PanelSectionRow>
           <ButtonItem
             layout="below"
@@ -218,23 +238,13 @@ export const SettingsPage: FC = () => {
             onClick={() =>
               void act(async () => {
                 const result = await forgetFingerprint();
-                setBanner(
-                  result.ok ? "Trusted fingerprint forgotten." : result.error.message,
-                );
+                setBanner(result.ok ? "Trusted fingerprint forgotten." : result.error.message);
               })
             }
           >
             Forget trusted fingerprint
           </ButtonItem>
         </PanelSectionRow>
-
-        {!settings.tls_enabled ? (
-          <PanelSectionRow>
-            <Field bottomSeparator="none">
-              TLS is off. Input from the server travels unencrypted over your network.
-            </Field>
-          </PanelSectionRow>
-        ) : null}
       </PanelSection>
 
       <PanelSection title="Input">
@@ -365,7 +375,7 @@ export const SettingsPage: FC = () => {
 
         <PanelSectionRow>
           <ButtonItem
-            layout="inline"
+            layout="below"
             disabled={busy}
             onClick={() =>
               void act(async () => {
@@ -379,19 +389,15 @@ export const SettingsPage: FC = () => {
           </ButtonItem>
         </PanelSectionRow>
 
+        {(checks ?? []).map((check) => (
+          <SelfTestRow key={check.id} check={check} />
+        ))}
+
         <PanelSectionRow>
-          <ButtonItem layout="inline" onClick={() => showModal(<LogsModal />)}>
+          <ButtonItem layout="below" onClick={() => showModal(<LogsModal />)}>
             View recent logs
           </ButtonItem>
         </PanelSectionRow>
-
-        {(checks ?? []).map((check) => (
-          <PanelSectionRow key={check.id}>
-            <Field label={check.id} bottomSeparator="none" description={check.detail}>
-              {check.ok ? "Pass" : "Fail"}
-            </Field>
-          </PanelSectionRow>
-        ))}
 
         <PanelSectionRow>
           <ButtonItem
