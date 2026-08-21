@@ -11,8 +11,9 @@ export default definePlugin(() => {
 
   return {
     // staticClasses.Title keeps the header consistent with every other Decky plugin.
+    // Matches plugin.json's name so the panel header and Decky's plugin list agree.
     name: "Deskflow Decky",
-    titleView: <div className={staticClasses.Title}>Deskflow</div>,
+    titleView: <div className={staticClasses.Title}>Deskflow Decky</div>,
     // A render fault inside the panel would otherwise unmount the Quick Access Menu,
     // which in Gaming Mode is genuinely hard to recover from.
     content: (

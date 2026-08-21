@@ -74,12 +74,12 @@ export const QuickAccessPanel: FC = () => {
 
   if (loading && status === null) {
     // A spinner beats an empty panel or a flash of "Disconnected" that is not true yet.
-    return <PanelSection title="Deskflow" spinner />;
+    return <PanelSection title="Status" spinner />;
   }
 
   if (status === null) {
     return (
-      <PanelSection title="Deskflow">
+      <PanelSection title="Status">
         <PanelSectionRow>
           <Field label="Status" bottomSeparator="none">
             Unavailable
@@ -99,7 +99,9 @@ export const QuickAccessPanel: FC = () => {
 
   return (
     <>
-      <PanelSection title="Deskflow">
+      {/* "Status", not "Deskflow": the panel header directly above already carries
+          the plugin name, and repeating it labelled nothing. */}
+      <PanelSection title="Status">
         <StatusRows status={status} />
       </PanelSection>
 
