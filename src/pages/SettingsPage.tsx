@@ -148,6 +148,28 @@ export const SettingsPage: FC = () => {
     }
   }, []);
 
+  /**
+   * Commit a numeric field, reporting bad input instead of ignoring it.
+   *
+   * Number.parseInt("12abc") is 12 and parseInt("abc") is NaN, so a bare parse either
+   * accepts nonsense or silently does nothing — and a field that quietly discards what
+   * you typed gives no clue whether the value was taken. The backend refuses to coerce
+   * strings, so a real number has to be sent.
+   */
+  const commitNumber = (field: keyof Settings, raw: string) => {
+    const text = raw.trim();
+    if (!/^\d+$/.test(text)) {
+      setFieldErrors((current) => ({ ...current, [field]: "Enter digits only." }));
+      return;
+    }
+    const parsed = Number(text);
+    if (!Number.isSafeInteger(parsed)) {
+      setFieldErrors((current) => ({ ...current, [field]: "That number is too large." }));
+      return;
+    }
+    void commit({ [field]: parsed } as Partial<Settings>);
+  };
+
   if (settings === null) {
     return <PanelSection title="Settings" spinner />;
   }
@@ -194,12 +216,7 @@ export const SettingsPage: FC = () => {
             mustBeNumeric
             description={fieldErrors.server_port ?? "Deskflow's default is 24800."}
             value={String(settings.server_port)}
-            onCommit={(value) => {
-              const parsed = Number.parseInt(value, 10);
-              // Send a number, never a string: the backend refuses to coerce.
-              if (Number.isInteger(parsed)) void commit({ server_port: parsed });
-              else setFieldErrors((c) => ({ ...c, server_port: "Must be a whole number." }));
-            }}
+            onCommit={(value) => commitNumber("server_port", value)}
           />
         </PanelSectionRow>
 
@@ -304,10 +321,7 @@ export const SettingsPage: FC = () => {
                 "cannot reach the whole screen."
             }
             value={String(settings.screen_width)}
-            onCommit={(value) => {
-              const parsed = Number.parseInt(value, 10);
-              if (Number.isInteger(parsed)) void commit({ screen_width: parsed });
-            }}
+            onCommit={(value) => commitNumber("screen_width", value)}
           />
         </PanelSectionRow>
 
@@ -317,10 +331,7 @@ export const SettingsPage: FC = () => {
             mustBeNumeric
             description={fieldErrors.screen_height ?? "0 detects it from this session."}
             value={String(settings.screen_height)}
-            onCommit={(value) => {
-              const parsed = Number.parseInt(value, 10);
-              if (Number.isInteger(parsed)) void commit({ screen_height: parsed });
-            }}
+            onCommit={(value) => commitNumber("screen_height", value)}
           />
         </PanelSectionRow>
 
@@ -338,7 +349,12 @@ export const SettingsPage: FC = () => {
       <PanelSection title="Behaviour">
         <PanelSectionRow>
           <ToggleField
-            label="Start automatically in Gaming Mode"
+            label="Start automatically"
+            description={
+              "Starts the helper whenever the plugin loads, so it survives a restart. " +
+              "The Helper toggle in the Quick Access panel is for right now only. " +
+              "Turned off automatically if the helper repeatedly fails to connect."
+            }
             checked={settings.autostart_gaming_mode}
             onChange={(checked) => void commit({ autostart_gaming_mode: checked })}
           />
@@ -381,7 +397,7 @@ export const SettingsPage: FC = () => {
 
       <PanelSection title="Helper">
         <PanelSectionRow>
-          <Field label="Helper status" bottomSeparator="none">
+          <Field label="Deskflow Decky helper" bottomSeparator="none">
             {helper === null
               ? "Checking…"
               : helper.installed

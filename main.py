@@ -145,6 +145,8 @@ class Plugin:
         self._screen_size = None
         # One notification per outage, not one per reconnect attempt.
         self._notified_disconnect = False
+        # Distinguishes 'never worked' (bad config) from 'worked then dropped' (outage).
+        self._had_healthy_connection = False
         self._watcher = FingerprintWatcher(
             on_fingerprint=self._on_peer_fingerprint, logger=decky.logger
         )
@@ -272,8 +274,10 @@ class Plugin:
         decky.logger.info("State %s -> %s (%s)", origin, target, reason or "no reason given")
 
         if target in _HEALTHY_STATES:
-            # Back up: arm the notification again for the next outage.
+            # Back up: arm the notification again for the next outage, and record that
+            # this session did reach a working connection at least once.
             self._notified_disconnect = False
+            self._had_healthy_connection = True
         elif target in _LOST_STATES and origin in _HEALTHY_STATES:
             self._notify_disconnected(reason)
         # Push rather than making the UI poll; the frontend poll is only a safety net
@@ -420,6 +424,49 @@ class Plugin:
         # exposes immediately.
         self._supervisor = self._loop.create_task(self._supervise())
         return ok({"state": self._state.state})
+
+    async def _trip_autostart_failsafe(self, failures):
+        """Stop starting the helper by itself once it has proven it cannot run.
+
+        Without this, a helper that crashes immediately is retried on every boot and
+        every plugin reload, forever, with nobody watching. Turning autostart off is
+        recoverable in one tap; an unattended crash loop is not.
+
+        Only autostart is disabled -- a manual start still works, so the user can retry
+        after fixing whatever was wrong.
+        """
+        if not self._settings.get("autostart_gaming_mode"):
+            return
+        if self._had_healthy_connection:
+            # It worked at some point this session, so this is an outage rather than a
+            # broken configuration. Leave autostart alone.
+            return
+
+        try:
+            self._settings = validate_patch({"autostart_gaming_mode": False}, self._settings)
+            self._settings_manager.setSetting("settings", self._settings)
+        except Exception:  # noqa: BLE001
+            decky.logger.exception("Could not disable autostart")
+            return
+
+        decky.logger.warning(
+            "Disabled autostart after %s consecutive failures without a working connection.",
+            failures,
+        )
+        if self._settings.get("notifications_enabled", True):
+            self._loop.create_task(
+                decky.emit(
+                    NOTIFY_EVENT,
+                    {
+                        "title": "Deskflow autostart disabled",
+                        "body": (
+                            "The helper failed {0} times without connecting, so it will "
+                            "no longer start by itself. Run the self-test, then start it "
+                            "manually once it passes.".format(failures)
+                        ),
+                    },
+                )
+            )
 
     def _give_up_reason(self, failures):
         """Why we stopped retrying, phrased so the next step is obvious."""
@@ -582,6 +629,7 @@ class Plugin:
                     failures += 1
                     if failures >= MAX_CONSECUTIVE_FAILURES:
                         self._to_state("error", reason=self._give_up_reason(failures))
+                        await self._trip_autostart_failsafe(failures)
                         return
         except asyncio.CancelledError:
             raise

@@ -393,3 +393,40 @@ def test_validation_error_does_not_echo_potentially_sensitive_values():
     # Hostnames can be private; the message names the field, not the value.
     err = expect_invalid("server_host", "secret-internal-host.corp;rm -rf /")
     assert "rm -rf" not in err.message
+
+
+# --------------------------------------------------------------- screen size
+
+# A wrong screen size is immediately visible (the pointer stops partway across the
+# display), and it is typed by hand, so it gets the same four-case treatment as
+# every other field.
+
+
+@pytest.mark.parametrize("good", [0, 320, 1280, 1920, 2560, 3840, 32767])
+def test_screen_extent_accepts_valid_values(good):
+    assert validate_field("screen_width", good) == good
+    assert validate_field("screen_height", good) == good
+
+
+def test_zero_is_accepted_and_means_detect():
+    assert validate_field("screen_width", 0) == 0
+
+
+@pytest.mark.parametrize("bad", [1, 319, 32768, 99999, -1, -1280])
+def test_screen_extent_rejects_out_of_range(bad):
+    expect_invalid("screen_width", bad)
+    expect_invalid("screen_height", bad)
+
+
+@pytest.mark.parametrize("bad", ["1920", "", "abc", 1920.5, None, True, False, [1920], {}])
+def test_screen_extent_rejects_non_integers(bad):
+    # Notably "1920" as text: the frontend must send a number, and a silent cast would
+    # hide a bug there.
+    expect_invalid("screen_width", bad)
+    expect_invalid("screen_height", bad)
+
+
+def test_screen_extent_upper_bound_matches_the_wire_protocol():
+    # kMsgDInfo carries geometry as int16; anything above that cannot be announced.
+    assert validate_field("screen_width", 32767) == 32767
+    expect_invalid("screen_width", 32768)
