@@ -106,7 +106,7 @@ export const DocumentationPage: FC = () => (
   <>
     <PanelSection title="What this does">
       <Paragraph>
-        This plugin lets a computer running a Deskflow server drive this Deck's
+        This plugin lets a computer running a Deskflow server drive this machine's
         keyboard and mouse, including inside Gaming Mode -- the Steam UI, native Linux
         games, and Proton games.
       </Paragraph>
@@ -123,7 +123,7 @@ export const DocumentationPage: FC = () => (
         and configure it as a server.
       </Paragraph>
       <Paragraph>
-        2. Add a screen to its layout whose name exactly matches this Deck's name from
+        2. Add a screen to its layout whose name exactly matches this machine's name from
         the Settings page. It defaults to something like "steamos-4f2a" rather than
         "steamdeck", because every Steam Deck and Steam Machine ships with that same
         hostname and two of them would collide on one server.

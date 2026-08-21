@@ -89,6 +89,26 @@ MIN_HEALTHY_UPTIME_S = 5
 SERVER_PROBE_TIMEOUT_S = 4
 
 
+async def run_capture(argv, env_extra=None, timeout=SUBPROCESS_TIMEOUT_S):
+    """Run an argv list and return (returncode, stdout+stderr) without raising.
+
+    For probes, where a non-zero exit is information rather than a failure.
+    """
+    env = clean_subprocess_env()
+    if env_extra:
+        env.update(env_extra)
+    process = await spawn_process(
+        *argv, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        process.kill()
+        await process.wait()
+        return None, "timed out after {0}s".format(timeout)
+    return process.returncode, (stdout or b"").decode("utf-8", "replace").strip()
+
+
 async def run_command(argv, timeout=SUBPROCESS_TIMEOUT_S):
     """Run an argument list and return stdout.
 
@@ -436,6 +456,16 @@ class Plugin:
 
         self._resolved_backend = backend
         self._watcher.reset()
+
+        if settings.get("clipboard_enabled"):
+            decky.logger.info(
+                "Clipboard sharing is on (wlClipboard=true, WAYLAND_DISPLAY=%s). "
+                "It needs a compositor with zwlr_data_control_manager_v1; run the "
+                "self-test to see whether this one has it.",
+                env.get("WAYLAND_DISPLAY") or "not set",
+            )
+        else:
+            decky.logger.info("Clipboard sharing is off.")
 
         try:
             await self._helper.start(argv, env, on_line=self._on_helper_line)
@@ -940,6 +970,57 @@ class Plugin:
     async def get_diagnostics(self):
         return ok(self._diagnostics_payload())
 
+    async def _probe_clipboard_tools(self):
+        """Are wl-copy and wl-paste actually inside the helper?
+
+        Deskflow reports the clipboard unavailable if either is missing from PATH, and
+        it does so silently. An older helper build has neither, so distinguishing "the
+        tools are absent" from "the compositor cannot do it" is the difference between
+        "update the helper" and "this will never work here".
+        """
+        code, output = await run_capture(
+            [
+                "flatpak", "run", "--user", "--command=sh", APP_ID,
+                "-c", "command -v wl-copy && command -v wl-paste",
+            ],
+            timeout=10,
+        )
+        if code == 0 and output:
+            return True, output.replace("\n", ", ")
+        return False, "wl-copy and wl-paste are not in the helper — update it"
+
+    async def _probe_clipboard(self):
+        """Actually exercise wl-paste inside the sandbox and report what happened.
+
+        Clipboard support depends on the compositor offering zwlr_data_control_manager_v1,
+        which gamescope does not. Rather than assert that, ask the tool.
+        """
+        display = os.environ.get("WAYLAND_DISPLAY")
+        if not display:
+            return False, "no Wayland display is available to the plugin"
+
+        code, output = await run_capture(
+            [
+                "flatpak", "run", "--user", "--command=wl-paste",
+                "--env=WAYLAND_DISPLAY={0}".format(display),
+                "--env=XDG_RUNTIME_DIR={0}".format(
+                    os.environ.get("XDG_RUNTIME_DIR", "/run/user/{0}".format(os.getuid()))
+                ),
+                APP_ID, "--list-types",
+            ],
+            timeout=8,
+        )
+        detail = (output or "").splitlines()[0][:160] if output else ""
+
+        if code == 0:
+            return True, "working; clipboard offers: {0}".format(detail or "nothing copied yet")
+        if code is None:
+            return False, "wl-paste did not respond ({0})".format(detail)
+        # wl-paste says so itself when the compositor lacks the protocol.
+        if "data-control" in (output or "").lower() or "not available" in (output or "").lower():
+            return False, "this compositor has no clipboard protocol: {0}".format(detail)
+        return False, detail or "wl-paste exited with {0}".format(code)
+
     async def _probe_server(self):
         """Can we open a TCP connection to the configured server? Bounded and harmless."""
         host = self._settings.get("server_host")
@@ -1033,20 +1114,17 @@ class Plugin:
         # 7. Clipboard, if asked for. It cannot work behind Gamescope, and silently
         #    doing nothing would be the worst of both worlds.
         if self._settings.get("clipboard_enabled"):
-            add(
-                "clipboard",
-                "Clipboard sharing",
-                not _is_gaming_mode(),
-                "not available in Gaming Mode: Gamescope has no data-control protocol"
-                if _is_gaming_mode()
-                else "available in Desktop Mode",
-            )
+            have_tools, tools_detail = await self._probe_clipboard_tools()
+            add("clipboard_tools", "Clipboard tools installed", have_tools, tools_detail)
+            if have_tools:
+                works, detail = await self._probe_clipboard()
+                add("clipboard", "Clipboard sharing", works, detail)
 
         # 8. TLS material.
         if self._settings.get("tls_enabled"):
             add(
                 "certificate",
-                "This Deck's certificate",
+                "This machine's certificate",
                 os.path.exists(CERT_PATH),
                 "present" if os.path.exists(CERT_PATH) else "will be generated on first start",
             )

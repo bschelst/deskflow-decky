@@ -176,7 +176,7 @@ export const SettingsPage: FC = () => {
             label="Mode"
             description={
               fieldErrors.mode ??
-              "Client receives input from another computer. Server shares this Deck's own input."
+              "Client receives input from another computer. Server shares this machine's own input."
             }
             rgOptions={modeOptions}
             selectedOption={settings.mode}
@@ -203,17 +203,18 @@ export const SettingsPage: FC = () => {
         <ValueRow
           label="Port"
           numeric
+          width="fixed"
           description={fieldErrors.server_port ?? "Deskflow's default is 24800."}
           value={settings.server_port}
           onCommit={(raw) => commitNumber("server_port", raw)}
         />
 
         <ValueRow
-          label="This Deck's name"
+          label="This machine's name"
           description={
             fieldErrors.client_name ??
-            "How this Deck appears to the server. A screen with exactly this name must " +
-              "exist in the server's layout."
+            "How this machine appears to the server. A screen with exactly this name " +
+              "must exist in the server's layout."
           }
           value={settings.client_name}
           onCommit={(value) => void commit({ client_name: value.trim() })}
@@ -304,6 +305,7 @@ export const SettingsPage: FC = () => {
         <ValueRow
           label="Screen width"
           numeric
+          width="fixed"
           description={
             fieldErrors.screen_width ??
             "0 detects it from this session. Set it only if the pointer cannot reach " +
@@ -316,6 +318,7 @@ export const SettingsPage: FC = () => {
         <ValueRow
           label="Screen height"
           numeric
+          width="fixed"
           description={fieldErrors.screen_height ?? "0 detects it from this session."}
           value={settings.screen_height}
           onCommit={(raw) => commitNumber("screen_height", raw)}

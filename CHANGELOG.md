@@ -63,8 +63,9 @@ with defaultLockToScreenState = true.
   seconds, not us. Turning off relativeMouseMoves on the server side might help.
 - Server mode only works in desktop mode. Gaming mode has no way to capture input, so
   the plugin refuses instead of pretending.
-- Clipboard sharing is in the box but only works in desktop mode. Gamescope doesnt
-  implement the protocol that wl-copy/wl-paste need, so in gaming mode the switch does
-  nothing. Its off by default and the self test tells you.
+- Clipboard sharing is in the box but does not work in gaming mode. wl-paste says it
+  straight out: "The compositor does not seem to implement wl_data_device_manager".
+  Its off by default, and the self test now actually runs wl-paste and shows you that
+  message instead of me guessing.
 - No drag and drop. Maybe later.
 - Not tested with anticheat and I'm not going to.

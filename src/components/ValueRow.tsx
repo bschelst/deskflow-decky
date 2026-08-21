@@ -19,8 +19,16 @@ export const ValueRow: FC<{
   value: string | number;
   numeric?: boolean;
   disabled?: boolean;
+  /**
+   * How much of the row the input may take.
+   *
+   * The default control column is sized for a toggle, which truncates a hostname to
+   * "bsc" and a port to "248". `max` for anything of unknown length, `fixed` for
+   * values with a known short shape like a port or a screen dimension.
+   */
+  width?: "min" | "max" | "fixed";
   onCommit: (raw: string) => void;
-}> = ({ label, description, value, numeric, disabled, onCommit }) => {
+}> = ({ label, description, value, numeric, disabled, width = "max", onCommit }) => {
   const [draft, setDraft] = useState(String(value));
 
   useEffect(() => {
@@ -29,7 +37,12 @@ export const ValueRow: FC<{
 
   return (
     <PanelSectionRow>
-      <Field label={label} description={description} bottomSeparator="standard">
+      <Field
+        label={label}
+        description={description}
+        bottomSeparator="standard"
+        childrenContainerWidth={width}
+      >
         <TextField
           mustBeNumeric={numeric}
           disabled={disabled}
