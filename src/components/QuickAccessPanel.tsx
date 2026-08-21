@@ -1,0 +1,186 @@
+import {
+  ButtonItem,
+  Field,
+  Navigation,
+  PanelSection,
+  PanelSectionRow,
+  ToggleField,
+  showModal,
+} from "@decky/ui";
+import { useCallback, useEffect, useRef, useState, type FC } from "react";
+
+import {
+  acceptFingerprint,
+  disableInput,
+  enableInput,
+  getPendingFingerprint,
+  rejectFingerprint,
+  restartHelper,
+  runSelfTest,
+  startHelper,
+  stopHelper,
+} from "../api/backend";
+import type { Status } from "../api/types";
+import { useAction, useDeskflowStatus } from "../hooks/useDeskflowStatus";
+import { truncate } from "../lib/format";
+import { PLUGIN_ROUTE } from "../routes";
+import { FingerprintModal } from "./FingerprintModal";
+import { StatusRows } from "./StatusRows";
+
+const isRecoverable = (status: Status) =>
+  status.state === "disconnected" || status.state === "degraded" || status.state === "error";
+
+const isRunning = (status: Status) =>
+  status.state !== "stopped" && status.state !== "error";
+
+export const QuickAccessPanel: FC = () => {
+  const { status, error, loading, refresh } = useDeskflowStatus();
+  const [busy, perform, actionError] = useAction(refresh);
+  const [note, setNote] = useState<string | null>(null);
+  // Guards against re-opening the dialog on every status poll while it is already up.
+  const promptOpen = useRef(false);
+
+  const promptForFingerprint = useCallback(async () => {
+    if (promptOpen.current) return;
+    const result = await getPendingFingerprint();
+    if (!result.ok || result.data === null) return;
+
+    promptOpen.current = true;
+    const pending = result.data;
+    showModal(
+      <FingerprintModal
+        pending={pending}
+        onAccept={() => {
+          promptOpen.current = false;
+          void (async () => {
+            await acceptFingerprint(pending.fingerprint);
+            await refresh();
+          })();
+        }}
+        onReject={() => {
+          promptOpen.current = false;
+          void (async () => {
+            await rejectFingerprint();
+            await refresh();
+          })();
+        }}
+      />,
+    );
+  }, [refresh]);
+
+  useEffect(() => {
+    if (status?.fingerprintPending) void promptForFingerprint();
+  }, [status?.fingerprintPending, promptForFingerprint]);
+
+  if (loading && status === null) {
+    // A spinner beats an empty panel or a flash of "Disconnected" that is not true yet.
+    return <PanelSection title="Deskflow" spinner />;
+  }
+
+  if (status === null) {
+    return (
+      <PanelSection title="Deskflow">
+        <PanelSectionRow>
+          <Field label="Status" bottomSeparator="none">
+            Unavailable
+          </Field>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <Field bottomSeparator="none">
+            {error?.message ?? "The plugin backend did not respond."}
+          </Field>
+        </PanelSectionRow>
+      </PanelSection>
+    );
+  }
+
+  const diagnostic = note ?? actionError?.message ?? status.lastError ?? error?.message ?? null;
+
+  return (
+    <>
+      <PanelSection title="Deskflow">
+        <StatusRows status={status} />
+      </PanelSection>
+
+      <PanelSection title="Control">
+        <PanelSectionRow>
+          <ToggleField
+            label="Helper"
+            description="Connect to the Deskflow server."
+            checked={isRunning(status)}
+            disabled={busy}
+            onChange={(next) => {
+              setNote(null);
+              void perform(() => (next ? startHelper() : stopHelper()));
+            }}
+          />
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <ToggleField
+            label="Input enabled"
+            description="Stop delivering input without disconnecting."
+            checked={status.inputEnabled}
+            disabled={busy || !isRunning(status)}
+            onChange={(next) => {
+              setNote(null);
+              void perform(() => (next ? enableInput() : disableInput()));
+            }}
+          />
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <ButtonItem
+            layout="inline"
+            disabled={busy || !isRecoverable(status)}
+            onClick={() => {
+              setNote(null);
+              void perform(restartHelper);
+            }}
+          >
+            Reconnect
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>
+
+      <PanelSection title="Diagnostics">
+        <PanelSectionRow>
+          <ButtonItem
+            layout="inline"
+            disabled={busy}
+            onClick={() =>
+              void perform(async () => {
+                const result = await runSelfTest();
+                if (result.ok) {
+                  const failed = result.data.checks.filter((check) => !check.ok);
+                  setNote(
+                    failed.length === 0
+                      ? "Self-test passed."
+                      : `Self-test: ${failed.map((check) => check.id).join(", ")} failed.`,
+                  );
+                }
+                return result;
+              })
+            }
+          >
+            Run self-test
+          </ButtonItem>
+        </PanelSectionRow>
+
+        {diagnostic ? (
+          <PanelSectionRow>
+            <Field bottomSeparator="none">{truncate(diagnostic)}</Field>
+          </PanelSectionRow>
+        ) : null}
+      </PanelSection>
+
+      <PanelSection>
+        <PanelSectionRow>
+          <ButtonItem layout="inline" onClick={() => Navigation.Navigate(PLUGIN_ROUTE)}>
+            Settings, docs &amp; about
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>
+    </>
+  );
+};

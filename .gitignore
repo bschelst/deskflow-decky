@@ -1,0 +1,43 @@
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Decky CLI build output
+out/
+cli/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Native helper build
+helper/build/
+helper/tools/*/build/
+helper/flatpak/.flatpak-builder/
+helper/flatpak/repo/
+*.flatpak
+
+# Local editor overrides
+.vscode/settings.json
+.vscode/defsettings.local.json
+
+# Secrets and generated runtime state — never commit these
+*.pem
+*.key
+*.crt
+tls/
+trusted-servers
+trusted-clients
+Deskflow.conf
+settings.json
+diagnostics-*.txt
+*.log
+
+# OS
+.DS_Store

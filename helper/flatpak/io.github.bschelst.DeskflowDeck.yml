@@ -1,0 +1,76 @@
+# Patched Deskflow for SteamOS Gaming Mode.
+#
+# Derived from upstream's deploy/linux/flatpak/org.deskflow.deskflow.yml. It carries a
+# DIFFERENT application id on purpose: reusing org.deskflow.deskflow would collide with
+# a user's Flathub install of the real thing.
+#
+# See ../README.md for what the patch does and why every permission below exists.
+id: io.github.bschelst.DeskflowDeck
+runtime: org.kde.Platform
+runtime-version: "6.11"
+sdk: org.kde.Sdk
+
+# The engine, not the Qt GUI. The plugin also passes --command=deskflow-core explicitly
+# so this default is not load-bearing.
+command: deskflow-core
+
+finish-args:
+  # The Deskflow protocol (TCP 24800).
+  - --share=network
+  # Required alongside the display sockets for normal Qt operation.
+  - --share=ipc
+  # Fallback Qt platform if QT_QPA_PLATFORM=offscreen proves unworkable on hardware.
+  - --socket=wayland
+  # Needed by the x11-xtest backend, which goes through Gamescope's XWayland.
+  - --socket=fallback-x11
+  #
+  # Deliberately absent: --device=all, --device=input, --filesystem=host,
+  # --filesystem=home, and any wildcard --talk-name.
+  #
+  # Access to Gamescope's EIS socket is NOT granted here. The plugin passes
+  # --filesystem=<the one discovered socket path> at launch, so the opening is scoped
+  # to a single socket and exists only while the helper is running.
+
+modules:
+  - name: libei
+    buildsystem: meson
+    config-opts:
+      - -Dtests=disabled
+      - -Ddocumentation=[]
+      - -Dliboeffis=enabled
+    sources:
+      - type: git
+        url: https://gitlab.freedesktop.org/libinput/libei.git
+        tag: "1.6.0"
+
+  - name: libportal
+    buildsystem: meson
+    config-opts:
+      - -Dbackend-qt6=enabled
+      - -Dbackend-gtk3=disabled
+      - -Dbackend-gtk4=disabled
+      - -Ddocs=false
+      - -Dtests=false
+      - -Dvapi=false
+      - -Dintrospection=false
+    sources:
+      - type: git
+        url: https://github.com/flatpak/libportal.git
+        tag: "0.10.0"
+
+  - name: deskflow
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_TESTS=OFF
+    sources:
+      # Pinned to a tag, never a moving branch: a build that cannot be reproduced
+      # cannot be audited.
+      - type: git
+        url: https://github.com/deskflow/deskflow.git
+        tag: v1.26.0
+        # commit: <fill in the tag's commit sha before releasing>
+      # Generate this against the pinned tag; see ../README.md. It is absent until it
+      # has actually been applied to the real tree and verified.
+      - type: patch
+        path: ../patches/0001-add-ei-backend-selection.patch

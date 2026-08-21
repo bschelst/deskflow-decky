@@ -1,0 +1,68 @@
+name: CI
+
+# No value from the event payload is interpolated into any run: step, so there is no
+# workflow-injection surface here. Keep it that way: if a future step needs event data,
+# pass it through env: and reference it as a shell variable.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run test
+      - run: pnpm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # SteamOS ships 3.11; local development may be newer, so CI pins the
+          # version the plugin actually has to run on.
+          python-version: "3.11"
+
+      - run: pip install pytest ruff
+
+      - name: Compile
+        run: python -m compileall -q main.py py_modules
+
+      - name: Lint
+        run: ruff check py_modules main.py tests
+
+      - name: Unit tests
+        run: python -m pytest tests/unit -q
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shellcheck packaging scripts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck packaging/*.sh

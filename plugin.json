@@ -1,0 +1,11 @@
+{
+  "name": "Deskflow Decky",
+  "author": "Bart Schelstraete",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["input", "keyboard", "mouse", "deskflow", "remote"],
+    "description": "Use a Deskflow-connected computer's keyboard and mouse in SteamOS Gaming Mode.",
+    "image": ""
+  }
+}
