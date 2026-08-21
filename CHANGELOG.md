@@ -1,0 +1,60 @@
+# Changelog
+
+## 0.1.0 — 22 Aug 2026
+
+First version that actually works. Keyboard and mouse from my laptop now reach the
+Steam Machine in gaming mode, which was the whole point.
+
+### What it does
+
+- Use the keyboard and mouse from another computer on your Deck, also inside gaming
+  mode (steam UI, native games, proton games)
+- Everything is configured from the Quick Access menu, no ssh needed
+- Ships its own patched Deskflow as a flatpak, so it doesnt touch the system
+
+### The patch
+
+Deskflow already had the code to talk to gamescope directly, it just never used it —
+both the client and the server pass "use the portal" no matter what, and there is no
+portal behind gamescope. So the socket path was unreachable. Two small patches:
+
+- let you pick the backend with an env var (defaults to the old behaviour, so nothing
+  changes for anyone else)
+- send a sensible screen size when the compositor doesnt report one, and back off
+  between reconnects instead of retrying every single second
+
+Both are against v1.26.0 and could go upstream as they are.
+
+### Things that took way too long to figure out
+
+- The helper runs in a flatpak sandbox and can not see decky's folders at all. The
+  config was there, so it "loaded" fine and then reported no server configured. That
+  one cost an hour.
+- Decky runs plugins in a bundled python, and that breaks any normal program you start
+  from it. openssl refused to run until the environment was cleaned up.
+- Do not pass PATH into the sandbox. It hides /app/bin and then nothing starts.
+- Gamescope says its screen is 2147483647 pixels wide. That does not fit in the
+  protocol, so the server just droped the connection with a very unhelpful error.
+- Killing the helper only killed the wrapper. The real proces kept running and then
+  blocked every next start, forever.
+
+### Nice to have bits
+
+- Tells you when the connection drops and when its back, once each, no spam
+- Warns you before trusting a server certificate, and says something different if the
+  fingerprint changed (that would be someone in the middle)
+- Self test that checks the things that actually break: helper installed, socket there,
+  server reachable, certificate trusted
+- Picks a unique name per machine, because every steam deck and steam machine is called
+  "steamdeck" out of the box and two of them fight over it
+- Works out the screen size by itself
+- Gives up on auto starting if the helper keeps crashing, instead of looping forever
+
+### Known problems
+
+- The mouse cursor is invisible until you click. Thats gamescope hiding it after 3
+  seconds, not us. Turning off relativeMouseMoves on the server side might help.
+- Server mode only works in desktop mode. Gaming mode has no way to capture input, so
+  the plugin refuses instead of pretending.
+- No clipboard sharing, no drag and drop. Maybe later.
+- Not tested with anticheat and I'm not going to.

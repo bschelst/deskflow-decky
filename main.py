@@ -145,6 +145,8 @@ class Plugin:
         self._screen_size = None
         # One notification per outage, not one per reconnect attempt.
         self._notified_disconnect = False
+        # One 'connected' announcement per helper start, not per reconnect.
+        self._announced_connection = False
         # Distinguishes 'never worked' (bad config) from 'worked then dropped' (outage).
         self._had_healthy_connection = False
         self._watcher = FingerprintWatcher(
@@ -243,6 +245,15 @@ class Plugin:
         )
         return snapshot
 
+    def _notify(self, title, body):
+        """Send one toast, if the user wants them. Never raises into a state callback."""
+        if not self._settings.get("notifications_enabled", True):
+            return
+        self._loop.create_task(decky.emit(NOTIFY_EVENT, {"title": title, "body": body}))
+
+    def _server_label(self):
+        return self._settings.get("server_host") or "the Deskflow server"
+
     def _notify_disconnected(self, reason):
         """Tell the user once that a working connection dropped.
 
@@ -251,31 +262,44 @@ class Plugin:
         """
         if self._notified_disconnect:
             return
-        if not self._settings.get("notifications_enabled", True):
-            return
         self._notified_disconnect = True
-        server = self._settings.get("server_host") or "the Deskflow server"
-        self._loop.create_task(
-            decky.emit(
-                NOTIFY_EVENT,
-                {
-                    "title": "Deskflow disconnected",
-                    "body": "Lost the connection to {0}. {1}".format(
-                        server,
-                        "Reconnecting automatically."
-                        if self._settings.get("reconnect_enabled")
-                        else "Automatic reconnect is off.",
-                    ),
-                },
-            )
+        self._notify(
+            "Deskflow Decky disconnected",
+            "Lost the connection to {0}. {1}".format(
+                self._server_label(),
+                "Reconnecting automatically."
+                if self._settings.get("reconnect_enabled")
+                else "Automatic reconnect is off.",
+            ),
+        )
+
+    def _notify_reconnected(self):
+        """Announce recovery, but only as the counterpart to a loss already announced.
+
+        Paired with _notify_disconnected via the same flag, so the two always come in
+        twos: one "lost", one "back". A flapping link produces a pair per outage rather
+        than a stream, and never a lone "reconnected" out of nowhere.
+        """
+        self._notify(
+            "Deskflow Decky reconnected", "Connected to {0} again.".format(self._server_label())
         )
 
     def _on_state_change(self, origin, target, reason):
         decky.logger.info("State %s -> %s (%s)", origin, target, reason or "no reason given")
 
         if target in _HEALTHY_STATES:
-            # Back up: arm the notification again for the next outage, and record that
-            # this session did reach a working connection at least once.
+            if not self._announced_connection:
+                # First connection since the helper was started: say so once, so the
+                # user knows it came up without having to open the panel.
+                self._announced_connection = True
+                self._notify(
+                    "Deskflow Decky connected",
+                    "Keyboard and mouse from {0} are available.".format(self._server_label()),
+                )
+            elif self._notified_disconnect:
+                # Only announce a recovery if a loss was announced. A blip that never
+                # produced a "disconnected" toast must not produce a "reconnected" one.
+                self._notify_reconnected()
             self._notified_disconnect = False
             self._had_healthy_connection = True
         elif target in _LOST_STATES and origin in _HEALTHY_STATES:
@@ -458,7 +482,7 @@ class Plugin:
                 decky.emit(
                     NOTIFY_EVENT,
                     {
-                        "title": "Deskflow autostart disabled",
+                        "title": "Deskflow Decky autostart disabled",
                         "body": (
                             "The helper failed {0} times without connecting, so it will "
                             "no longer start by itself. Run the self-test, then start it "
@@ -566,6 +590,8 @@ class Plugin:
         # The helper releases held keys and buttons as it shuts down; record whether
         # the exit was clean so diagnostics can report it.
         self._input_released_on_last_stop = stopped
+        self._announced_connection = False
+        self._notified_disconnect = False
         self._watcher.reset()
 
         self._to_state("stopped")
@@ -949,7 +975,7 @@ class Plugin:
         installed = bool(info.get("installed"))
         add(
             "helper",
-            "Deskflow helper installed",
+            "Deskflow Decky helper installed",
             installed,
             info.get("version") or APP_ID if installed else "install it from this page",
         )

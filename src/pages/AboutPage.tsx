@@ -32,13 +32,13 @@ export const AboutPage: FC = () => {
           </Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <Field label="Helper" bottomSeparator="none" focusable>
+          <Field label="Deskflow Decky helper" bottomSeparator="none" focusable>
             {helper === null ? "Checking…" : helper.installed ? helper.appId : "Not installed"}
           </Field>
         </PanelSectionRow>
         {helper?.installed && helper.version ? (
           <PanelSectionRow>
-            <Field label="Helper version" bottomSeparator="none" focusable>
+            <Field label="Deskflow Decky helper version" bottomSeparator="none" focusable>
               {helper.version}
             </Field>
           </PanelSectionRow>
@@ -46,7 +46,7 @@ export const AboutPage: FC = () => {
         {helper?.installed && helper.permissions.length > 0 ? (
           <PanelSectionRow>
             <Field
-              label="Helper permissions"
+              label="Deskflow Decky helper permissions"
               bottomSeparator="none"
               focusable
               description="Access to Gamescope's input socket is granted per launch, scoped to one socket."

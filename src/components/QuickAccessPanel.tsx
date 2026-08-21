@@ -110,7 +110,7 @@ export const QuickAccessPanel: FC = () => {
       <PanelSection title="Control">
         <PanelSectionRow>
           <ToggleField
-            label="Helper"
+            label="Deskflow Decky helper"
             description="Connect to the Deskflow server."
             checked={isRunning(status)}
             disabled={busy}

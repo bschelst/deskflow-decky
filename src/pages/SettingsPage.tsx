@@ -22,8 +22,8 @@ import {
 } from "../api/backend";
 import type { HelperInfo, SelfTestResult, Settings } from "../api/types";
 import { ACTIVATION_MODES, INPUT_BACKENDS, LOG_LEVELS, MODES } from "../api/types";
-import { EditableTextField } from "../components/EditableTextField";
 import { LogsModal } from "../components/LogsModal";
+import { ValueRow } from "../components/ValueRow";
 import { SelfTestRows } from "../components/SelfTestRows";
 import { useDeskflowStatus } from "../hooks/useDeskflowStatus";
 import { BACKEND_LABEL, MODE_LABEL } from "../lib/format";
@@ -192,34 +192,32 @@ export const SettingsPage: FC = () => {
         ) : null}
 
         {settings.mode === "client" ? (
-          <PanelSectionRow>
-            <EditableTextField
-              label="Server address"
-              description={fieldErrors.server_host ?? "Hostname or IP of the Deskflow server."}
-              value={settings.server_host}
-              onCommit={(value) => void commit({ server_host: value })}
-            />
-          </PanelSectionRow>
+          <ValueRow
+            label="Server address"
+            description={fieldErrors.server_host ?? "Hostname or IP of the Deskflow server."}
+            value={settings.server_host}
+            onCommit={(value) => void commit({ server_host: value.trim() })}
+          />
         ) : null}
 
-        <PanelSectionRow>
-          <EditableTextField
-            label="Port"
-            mustBeNumeric
-            description={fieldErrors.server_port ?? "Deskflow's default is 24800."}
-            value={String(settings.server_port)}
-            onCommit={(value) => commitNumber("server_port", value)}
-          />
-        </PanelSectionRow>
+        <ValueRow
+          label="Port"
+          numeric
+          description={fieldErrors.server_port ?? "Deskflow's default is 24800."}
+          value={settings.server_port}
+          onCommit={(raw) => commitNumber("server_port", raw)}
+        />
 
-        <PanelSectionRow>
-          <EditableTextField
-            label="This Deck's name"
-            description={fieldErrors.client_name ?? "How this Deck appears to the server."}
-            value={settings.client_name}
-            onCommit={(value) => void commit({ client_name: value })}
-          />
-        </PanelSectionRow>
+        <ValueRow
+          label="This Deck's name"
+          description={
+            fieldErrors.client_name ??
+            "How this Deck appears to the server. A screen with exactly this name must " +
+              "exist in the server's layout."
+          }
+          value={settings.client_name}
+          onCommit={(value) => void commit({ client_name: value.trim() })}
+        />
 
         <NoticeFor where="connection" />
       </PanelSection>
@@ -303,29 +301,25 @@ export const SettingsPage: FC = () => {
           />
         </PanelSectionRow>
 
-        <PanelSectionRow>
-          <EditableTextField
-            label="Screen width"
-            mustBeNumeric
-            description={
-              fieldErrors.screen_width ??
-              "0 detects it from this session. Set it manually only if the pointer " +
-                "cannot reach the whole screen."
-            }
-            value={String(settings.screen_width)}
-            onCommit={(value) => commitNumber("screen_width", value)}
-          />
-        </PanelSectionRow>
+        <ValueRow
+          label="Screen width"
+          numeric
+          description={
+            fieldErrors.screen_width ??
+            "0 detects it from this session. Set it only if the pointer cannot reach " +
+              "the whole screen."
+          }
+          value={settings.screen_width}
+          onCommit={(raw) => commitNumber("screen_width", raw)}
+        />
 
-        <PanelSectionRow>
-          <EditableTextField
-            label="Screen height"
-            mustBeNumeric
-            description={fieldErrors.screen_height ?? "0 detects it from this session."}
-            value={String(settings.screen_height)}
-            onCommit={(value) => commitNumber("screen_height", value)}
-          />
-        </PanelSectionRow>
+        <ValueRow
+          label="Screen height"
+          numeric
+          description={fieldErrors.screen_height ?? "0 detects it from this session."}
+          value={settings.screen_height}
+          onCommit={(raw) => commitNumber("screen_height", raw)}
+        />
 
         <PanelSectionRow>
           <DropdownItem
@@ -343,8 +337,8 @@ export const SettingsPage: FC = () => {
           <ToggleField
             label="Start automatically"
             description={
-              "Starts the helper whenever the plugin loads, so it survives a restart. " +
-              "The Helper toggle in the Quick Access panel is for right now only. " +
+              "Starts the Deskflow Decky helper whenever the plugin loads, so it survives a restart. " +
+              "The toggle in the Quick Access panel is for the current session only. " +
               "Turned off automatically if the helper repeatedly fails to connect."
             }
             checked={settings.autostart_gaming_mode}
@@ -387,9 +381,9 @@ export const SettingsPage: FC = () => {
         </PanelSectionRow>
       </PanelSection>
 
-      <PanelSection title="Helper">
+      <PanelSection title="Deskflow Decky helper">
         <PanelSectionRow>
-          <Field label="Deskflow Decky helper" bottomSeparator="none">
+          <Field label="Status" bottomSeparator="none">
             {helper === null
               ? "Checking…"
               : helper.installed
@@ -402,20 +396,20 @@ export const SettingsPage: FC = () => {
           <ButtonItem
             layout="below"
             disabled={busy}
-            description={`Installs or updates ${helper?.appId ?? "the helper flatpak"} at user scope.`}
+            description={`Installs or updates the Deskflow Decky helper (${helper?.appId ?? "flatpak"}) at user scope.`}
             onClick={() =>
               void act(async () => {
                 const result = await installHelper();
                 if (result.ok) {
                   setHelper(result.data);
-                  say("helper", "Helper installed.");
+                  say("helper", "Deskflow Decky helper installed.");
                 } else {
                   say("helper", result.error.message);
                 }
               })
             }
           >
-            {helper?.installed ? "Update helper" : "Install helper"}
+            {helper?.installed ? "Update Deskflow Decky helper" : "Install Deskflow Decky helper"}
           </ButtonItem>
         </PanelSectionRow>
 
@@ -427,11 +421,11 @@ export const SettingsPage: FC = () => {
             onClick={() =>
               void act(async () => {
                 const result = await restartHelper();
-                say("helper", result.ok ? "Helper restarted." : result.error.message);
+                say("helper", result.ok ? "Deskflow Decky helper restarted." : result.error.message);
               })
             }
           >
-            Restart helper
+            Restart Deskflow Decky helper
           </ButtonItem>
         </PanelSectionRow>
 

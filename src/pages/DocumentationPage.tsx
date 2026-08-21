@@ -62,7 +62,7 @@ const TROUBLESHOOTING: Array<{ code: ErrorCode; meaning: string; fix: string }> 
   },
   {
     code: "not_installed",
-    meaning: "The Deskflow helper flatpak is not installed.",
+    meaning: "The Deskflow Decky helper flatpak is not installed.",
     fix: "Install it from the Settings page, or run packaging/install-helper.sh in Desktop Mode.",
   },
   {
