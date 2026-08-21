@@ -113,10 +113,18 @@ def test_environment_is_explicit_not_inherited():
             "XDG_SESSION_TYPE",
             "QT_QPA_PLATFORM",
             "DESKFLOW_EI_BACKEND",
+            "DESKFLOW_SCREEN_SIZE",
             "DISPLAY",
             "WAYLAND_DISPLAY",
         }
     )
+
+
+def test_libei_backend_declares_a_usable_screen_size():
+    # Without this the patched helper announces 1x1, which the server rejects with
+    # "invalid message from client: DINF" and which strands the pointer on the Deck.
+    env = build_environment(settings(), "gamescope-libei", found())
+    assert env["DESKFLOW_SCREEN_SIZE"] == "1280x800"
 
 
 def test_libei_backend_selects_the_socket_path_and_patched_backend():
@@ -192,6 +200,16 @@ def test_explicit_libei_without_a_socket_raises_rather_than_falling_back():
 
 
 # --------------------------------------------------------------------------- backoff
+
+
+def test_backoff_follows_the_agreed_schedule():
+    delays = [next_backoff_delay(n, maximum=60) for n in range(1, 7)]
+    assert delays == [1, 2, 5, 10, 15, 30]
+
+
+def test_backoff_settles_rather_than_growing_without_limit():
+    # A server that is simply switched off should be retried steadily and cheaply.
+    assert [next_backoff_delay(n, maximum=60) for n in (7, 20, 500)] == [30, 30, 30]
 
 
 def test_backoff_grows():

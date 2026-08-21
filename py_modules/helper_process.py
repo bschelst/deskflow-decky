@@ -40,8 +40,16 @@ _FORBIDDEN_IN_ARGUMENT = ("\n", "\r", "\x00")
 #: directory` -- the helper is in /app/bin, and our PATH did not include it.
 NOT_FORWARDED_TO_SANDBOX = frozenset({"PATH"})
 
-INITIAL_BACKOFF_S = 1
-BACKOFF_FACTOR = 2
+#: Supervisor restart schedule, in seconds, settling at a steady interval.
+#:
+#: Mirrors the helper's own internal reconnect schedule so the two do not fight: a
+#: doubling backoff on top of a 1s inner retry produced a burst of failures per second
+#: against an unreachable server, which on a battery-powered device is pure waste.
+RESTART_SCHEDULE_S = (1, 2, 5, 10, 15, 30)
+
+#: Logical screen size claimed when libei reports no region. The Deck's native panel.
+DEFAULT_SCREEN_SIZE = "1280x800"
+
 TERMINATE_GRACE_S = 5
 
 
@@ -171,8 +179,12 @@ def build_environment(settings, backend, discovery, display=None, home=None):
         env["DESKFLOW_EI_BACKEND"] = "socket"
         env["XDG_SESSION_TYPE"] = "wayland"
         # libei talks to the EIS socket directly, so the Qt platform does not need a
-        # display. Verify on hardware before relying on this (PROJECT.md M2c).
+        # display. Confirmed working on hardware.
         env["QT_QPA_PLATFORM"] = "offscreen"
+        # Gamescope's virtual devices are relative-only, so libei reports no region and
+        # the patched helper needs to be told what screen shape to announce. Without
+        # this it claims 1x1, which the server rejects and which strands the pointer.
+        env["DESKFLOW_SCREEN_SIZE"] = DEFAULT_SCREEN_SIZE
 
     elif backend == "x11-xtest":
         # PlatformInfo::isWayland() tests XDG_SESSION_TYPE, and that is what makes
@@ -214,11 +226,16 @@ def build_command(settings, config_path, backend, discovery, display=None, app_i
 
 
 def next_backoff_delay(attempt, maximum):
-    """Bounded exponential backoff. Attempt is 1-based."""
+    """Delay before restart attempt ``attempt`` (1-based), capped at ``maximum``.
+
+    Walks RESTART_SCHEDULE_S and then holds at its last value, rather than doubling
+    without limit: a server that is merely switched off should be retried steadily and
+    cheaply, not with ever-growing gaps.
+    """
     if attempt < 1:
         attempt = 1
-    delay = INITIAL_BACKOFF_S * (BACKOFF_FACTOR ** (attempt - 1))
-    return min(delay, maximum)
+    index = min(attempt - 1, len(RESTART_SCHEDULE_S) - 1)
+    return min(RESTART_SCHEDULE_S[index], maximum)
 
 
 class HelperProcess:

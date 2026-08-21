@@ -117,3 +117,5 @@ modules:
         commit: 82fd4b78e4c8271a77420937b829f21d1cbe623d
       - type: patch
         path: ../patches/0001-add-ei-backend-selection.patch
+      - type: patch
+        path: ../patches/0002-fixed-screen-size-and-retry-backoff.patch

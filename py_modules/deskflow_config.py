@@ -61,7 +61,6 @@ def render_ini(settings, cert_path):
         lines += [
             "[client]",
             "remoteHost={0}".format(_safe("server_host", settings["server_host"])),
-            "dynamicConnectionInterval=true",
             "",
         ]
 

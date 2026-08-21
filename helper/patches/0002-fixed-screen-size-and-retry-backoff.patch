@@ -1,0 +1,169 @@
+From 9bda8b3111001b92b8fcdd99285c449fc066ef33 Mon Sep 17 00:00:00 2001
+From: Bart Schelstraete <bart@schelstraete.org>
+Date: Sat, 22 Aug 2026 00:00:51 +0200
+Subject: [PATCH] fix: usable screen shape and a backing-off reconnect on the
+ ei socket backend
+
+Two problems that only appear with the socket backend, where the compositor's
+virtual devices are relative-only and libei reports no absolute region.
+
+updateShape() then leaves the screen at 1x1 with an unset origin, and the client
+announces that shape to the server. A Deskflow server rejects it outright
+("invalid message from client: DINF"), and then drains the connection because it
+can no longer find message boundaries, so the client sees the server go silent.
+Even where a server accepts it, a one-pixel screen is a trap: once the pointer
+crosses onto it there is nowhere left to move back from, and the user loses the
+keyboard and mouse on the machine running the server.
+
+Fall back to a fixed logical screen size when no region is reported, overridable
+with DESKFLOW_SCREEN_SIZE=WxH. Screens that do report regions are unaffected.
+
+Separately, the reconnect interval is a flat 1 second at every call site, which
+hammers an unreachable server indefinitely -- on a battery-powered client that is
+pure waste, and it fills the log with a failure per second. Escalate 1, 2, 5, 10,
+15 and then settle at 30 seconds, resetting once a connection succeeds.
+---
+ src/lib/deskflow/ClientApp.cpp | 33 +++++++++++++++++++++++++++----
+ src/lib/platform/EiScreen.cpp  | 36 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 65 insertions(+), 4 deletions(-)
+
+diff --git a/src/lib/deskflow/ClientApp.cpp b/src/lib/deskflow/ClientApp.cpp
+index 9e1b9f5..1718575 100644
+--- a/src/lib/deskflow/ClientApp.cpp
++++ b/src/lib/deskflow/ClientApp.cpp
+@@ -47,6 +47,30 @@
+ 
+ constexpr static auto s_retryTime = 1.0;
+ 
++// Escalating reconnect schedule, in seconds, ending in a steady interval.
++//
++// A flat 1s retry hammers an unreachable server indefinitely -- on a battery-powered
++// client that is pure waste, and the log fills with one failure per second. This backs
++// off and then settles, so a server that comes back is still picked up reasonably
++// promptly without spinning in the meantime. Reset once a connection succeeds.
++constexpr static double s_retrySchedule[] = {1.0, 2.0, 5.0, 10.0, 15.0, 30.0};
++constexpr static auto s_retryScheduleLength = sizeof(s_retrySchedule) / sizeof(s_retrySchedule[0]);
++static size_t s_retryStep = 0;
++
++static double nextRetryTime()
++{
++  const auto index = (s_retryStep < s_retryScheduleLength) ? s_retryStep : s_retryScheduleLength - 1;
++  if (s_retryStep + 1 < s_retryScheduleLength) {
++    ++s_retryStep;
++  }
++  return s_retrySchedule[index];
++}
++
++static void resetRetryTime()
++{
++  s_retryStep = 0;
++}
++
+ ClientApp::ClientApp(IEventQueue *events, const QString &processName) : App(events, processName)
+ {
+   // do nothing
+@@ -182,6 +206,7 @@ void ClientApp::handleClientConnected()
+   LOG_IPC("connected to server");
+   // Reset server index on successful connection
+   m_currentServerIndex = 0;
++  resetRetryTime();
+   m_lastServerAddressIndex = 0;
+ }
+ 
+@@ -193,7 +218,7 @@ void ClientApp::handleClientFailed(const Event &e)
+ 
+     LOG_WARN("failed to connect to server=%s, trying next resolved address", info->m_what.c_str());
+     if (!m_suspended) {
+-      scheduleClientRestart(s_retryTime);
++      scheduleClientRestart(nextRetryTime());
+     }
+   } else {
+     // All resolved addresses exhausted, try next server in list
+@@ -207,7 +232,7 @@ void ClientApp::handleClientFailed(const Event &e)
+       std::unique_ptr<Client::FailInfo> info(static_cast<Client::FailInfo *>(e.getData()));
+       LOG_WARN("failed to connect to server=%s, trying next server in list", info->m_what.c_str());
+       if (!m_suspended) {
+-        scheduleClientRestart(s_retryTime);
++        scheduleClientRestart(nextRetryTime());
+       }
+     }
+   }
+@@ -223,7 +248,7 @@ void ClientApp::handleClientRefused(const Event &e)
+   } else {
+     LOG_WARN("failed to connect to server: %s", info->m_what.c_str());
+     if (!m_suspended) {
+-      scheduleClientRestart(s_retryTime);
++      scheduleClientRestart(nextRetryTime());
+     }
+   }
+ }
+@@ -232,7 +257,7 @@ void ClientApp::handleClientDisconnected()
+ {
+   LOG_IPC("disconnected from server");
+   if (!m_suspended) {
+-    scheduleClientRestart(s_retryTime);
++    scheduleClientRestart(nextRetryTime());
+   }
+ }
+ 
+diff --git a/src/lib/platform/EiScreen.cpp b/src/lib/platform/EiScreen.cpp
+index 5ef4c82..d608bd9 100644
+--- a/src/lib/platform/EiScreen.cpp
++++ b/src/lib/platform/EiScreen.cpp
+@@ -462,10 +462,12 @@ void EiScreen::updateShape()
+   m_h = 1;
+   m_x = std::numeric_limits<uint32_t>::max();
+   m_y = std::numeric_limits<uint32_t>::max();
++  bool haveRegion = false;
+   for (auto it = m_eiDevices.begin(); it != m_eiDevices.end(); it++) {
+     auto idx = 0;
+     struct ei_region *r;
+     while ((r = ei_device_get_region(*it, idx++)) != nullptr) {
++      haveRegion = true;
+       m_x = std::min(ei_region_get_x(r), m_x);
+       m_y = std::min(ei_region_get_y(r), m_y);
+       m_w = std::max(ei_region_get_x(r) + ei_region_get_width(r), m_w);
+@@ -473,6 +475,40 @@ void EiScreen::updateShape()
+     }
+   }
+ 
++  if (!haveRegion) {
++    // No device reported an absolute region. A compositor whose virtual devices are
++    // relative-only -- gamescope, for one -- provides none, and the screen would then
++    // be announced as 1x1 at an unset origin. A server rejects that shape, and even if
++    // it accepted it, a one-pixel screen is a trap: once the pointer crosses onto it
++    // there is nowhere left to move back from.
++    //
++    // Fall back to a fixed logical size. DESKFLOW_SCREEN_SIZE overrides it, as "WxH".
++    int32_t width = 1280;
++    int32_t height = 800;
++    const auto configured = qEnvironmentVariable("DESKFLOW_SCREEN_SIZE");
++    if (!configured.isEmpty()) {
++      const auto parts = configured.split(QLatin1Char('x'), Qt::SkipEmptyParts);
++      bool okWidth = false;
++      bool okHeight = false;
++      if (parts.size() == 2) {
++        const auto w = parts[0].toInt(&okWidth);
++        const auto h = parts[1].toInt(&okHeight);
++        if (okWidth && okHeight && w > 0 && h > 0) {
++          width = w;
++          height = h;
++        }
++      }
++      if (!okWidth || !okHeight) {
++        LOG_WARN("ignoring invalid DESKFLOW_SCREEN_SIZE '%s', expected WxH", qPrintable(configured));
++      }
++    }
++    m_x = 0;
++    m_y = 0;
++    m_w = width;
++    m_h = height;
++    LOG_INFO("no libei region reported; using fixed logical screen size %dx%d", m_w, m_h);
++  }
++
+   LOG_DEBUG("logical output size: %dx%d@%d.%d", m_w, m_h, m_x, m_y);
+   m_cursorX = m_x + m_w / 2;
+   m_cursorY = m_y + m_h / 2;
+-- 
+2.53.0
+
