@@ -15,6 +15,7 @@ import {
   describeBackend,
   describeMode,
   describeServer,
+  fingerprintLines,
   groupFingerprint,
   serverModeUnavailable,
   truncate,
@@ -129,6 +130,33 @@ describe("groupFingerprint", () => {
 
   it("returns the input unchanged when there is no hex to group", () => {
     expect(groupFingerprint("not a fingerprint")).toBe("not a fingerprint");
+  });
+});
+
+describe("fingerprintLines", () => {
+  const FP = "ab".repeat(32);
+
+  it("splits a SHA-256 fingerprint into four lines of eight bytes", () => {
+    const lines = fingerprintLines(FP);
+    expect(lines).toHaveLength(4);
+    for (const line of lines) expect(line.split(":")).toHaveLength(8);
+  });
+
+  it("loses nothing in the split", () => {
+    expect(fingerprintLines(FP).join(":").replace(/:/g, "").toLowerCase()).toBe(FP);
+  });
+
+  it("keeps each line short enough for the modal", () => {
+    // 95 characters on one line overflowed the modal and ran off screen.
+    for (const line of fingerprintLines(FP)) expect(line.length).toBeLessThanOrEqual(24);
+  });
+
+  it("honours a custom grouping", () => {
+    expect(fingerprintLines(FP, 16)).toHaveLength(2);
+  });
+
+  it("leaves a short value on a single line", () => {
+    expect(fingerprintLines("AB:CD")).toEqual(["AB:CD"]);
   });
 });
 

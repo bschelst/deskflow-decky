@@ -7,7 +7,7 @@
 #
 set -Eeuo pipefail
 
-APP_ID="io.github.bschelst.DeskflowDeck"
+APP_ID="org.schelstraete.DeskFlowDecky"
 PLUGIN_NAME="Deskflow Decky"
 DECKY_HOME="${DECKY_HOME:-$HOME/homebrew}"
 

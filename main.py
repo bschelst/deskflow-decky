@@ -8,6 +8,7 @@ Quick Access Menu -- which in Gaming Mode is genuinely hard to recover from.
 
 import asyncio
 import os
+import signal
 from asyncio import create_subprocess_exec as spawn_process  # argv list only, no shell
 
 import decky
@@ -24,6 +25,7 @@ from helper_process import (
     build_command,
     build_environment,
     clean_subprocess_env,
+    find_stray_helpers,
     next_backoff_delay,
     resolve_backend,
 )
@@ -139,6 +141,10 @@ class Plugin:
         self._lifecycle = asyncio.Lock()
 
         self._settings = self._load_settings()
+
+        # A helper orphaned by a previous run (loader crash, forced restart) would
+        # block every start from here on, so clear the ground before doing anything.
+        await self._kill_helper_app()
 
         if self._settings.get("autostart_gaming_mode"):
             decky.logger.info("Autostart is enabled; starting helper.")
@@ -350,6 +356,35 @@ class Plugin:
         async with self._lifecycle:
             return await self._stop_locked()
 
+    async def _kill_helper_app(self):
+        """Make sure no sandboxed helper survives.
+
+        Terminating our direct child only kills the `flatpak run` wrapper; the actual
+        deskflow-core runs under bwrap and can outlive it. An orphan then blocks every
+        future start, because Deskflow refuses a second instance ("an instance of
+        deskflow core is already running", exit 5) -- so the plugin wedges permanently.
+        """
+        try:
+            await run_command(["flatpak", "kill", APP_ID], timeout=15)
+        except Exception:  # noqa: BLE001 - "nothing was running" is the common case
+            pass
+
+        # flatpak kill is not enough on its own: once the launching process dies the
+        # instance registry forgets the app and reports "not running" while the
+        # sandboxed process is plainly still there. Sweep by app id as well.
+        for pid in find_stray_helpers():
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.kill(pid, sig)
+                except (ProcessLookupError, PermissionError):
+                    break
+                await asyncio.sleep(1)
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    break
+            decky.logger.warning("Cleared a stray helper process (pid %s)", pid)
+
     async def _stop_locked(self):
         supervisor = self._supervisor
         self._supervisor = None
@@ -366,6 +401,9 @@ class Plugin:
                 decky.logger.exception("Supervisor task ended with an error")
 
         stopped = await self._helper.stop()
+        # ...and then make sure the sandboxed process itself is gone, not just our
+        # direct child.
+        await self._kill_helper_app()
         # The helper releases held keys and buttons as it shuts down; record whether
         # the exit was clean so diagnostics can report it.
         self._input_released_on_last_stop = stopped
@@ -534,8 +572,20 @@ class Plugin:
 
     @safe
     async def reject_fingerprint(self):
+        host = self._settings.get("server_host") or "the server"
         self._pending_fingerprint = None
         await self._stop()
+        # Rejecting is not a dead end, but nothing else would say so: the helper is
+        # stopped, no certificate is trusted, and the panel would otherwise show a bare
+        # "Stopped" with no hint that turning it back on re-asks.
+        self._to_state(
+            "stopped",
+            reason=(
+                "Certificate for {0} was rejected, so nothing is trusted. Turn the "
+                "Helper back on to be asked again.".format(host)
+            ),
+        )
+        decky.logger.info("Server certificate rejected for %s", host)
         return ok({"trusted": False})
 
     @safe

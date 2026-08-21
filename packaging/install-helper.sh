@@ -10,7 +10,7 @@
 #
 set -Eeuo pipefail
 
-APP_ID="io.github.bschelst.DeskflowDeck"
+APP_ID="org.schelstraete.DeskFlowDecky"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 info() { printf '%s\n' "$1"; }

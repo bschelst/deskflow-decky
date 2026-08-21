@@ -15,7 +15,7 @@
 #     headless engine needs neither a GPU nor a tray icon.
 #
 # See ../README.md for what the patch does and why each permission exists.
-app-id: io.github.bschelst.DeskflowDeck
+app-id: org.schelstraete.DeskFlowDecky
 runtime: org.kde.Platform
 runtime-version: "6.10"
 sdk: org.kde.Sdk

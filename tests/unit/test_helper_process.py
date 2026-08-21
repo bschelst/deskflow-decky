@@ -10,10 +10,12 @@ import pytest
 from discovery import DiscoveryResult
 from helper_process import (
     APP_ID,
+    HelperProcess,
     LaunchError,
     build_command,
     build_environment,
     clean_subprocess_env,
+    find_stray_helpers,
     next_backoff_delay,
     resolve_backend,
 )
@@ -258,3 +260,72 @@ def test_the_source_mapping_is_not_mutated():
 def test_a_clean_environment_passes_through_unchanged():
     source = {"PATH": "/usr/bin"}
     assert clean_subprocess_env(source) == {"PATH": "/usr/bin"}
+
+
+# --------------------------------------------------------------- process group cleanup
+
+# `flatpak run` execs bwrap which runs deskflow-core. Killing only the direct child
+# leaves the sandboxed process alive, and Deskflow then refuses every future start with
+# "an instance of deskflow core is already running" -- observed on hardware as a
+# permanently wedged plugin.
+
+
+class FakeProcess:
+    def __init__(self):
+        self.returncode = None
+        self.pid = 4242
+        self.stdout = None
+
+    async def wait(self):
+        self.returncode = 0
+        return 0
+
+
+def test_helper_is_spawned_in_its_own_session():
+    import asyncio as _asyncio
+
+    recorded = {}
+
+    async def fake_spawn(*argv, **kwargs):
+        recorded.update(kwargs)
+        return FakeProcess()
+
+    helper = HelperProcess(spawn=fake_spawn)
+    _asyncio.run(helper.start(["flatpak", "run", "x"], {"PATH": "/usr/bin"}))
+    assert recorded.get("start_new_session") is True, (
+        "without its own session the sandboxed grandchild survives stop()"
+    )
+
+
+def test_finds_a_stray_helper_by_app_id(tmp_path):
+    # A fake /proc: only a process whose cmdline names our app id AND the helper
+    # command should ever be selected.
+    def make(pid, cmdline):
+        d = tmp_path / str(pid)
+        d.mkdir()
+        (d / "cmdline").write_bytes(cmdline.encode())
+
+    make(101, "deskflow-core\x00client\x00-s\x00/x/org.schelstraete.DeskFlowDecky/c.conf")
+    make(102, "firefox\x00")
+    make(103, "deskflow-core\x00client\x00-s\x00/some/other/app/c.conf")
+    make(104, "flatpak\x00run\x00org.deskflow.deskflow\x00")
+    (tmp_path / "notapid").mkdir()
+
+    found = find_stray_helpers(proc_root=str(tmp_path), own_pid=999)
+    assert found == [101]
+
+
+def test_never_selects_our_own_process(tmp_path):
+    d = tmp_path / "555"
+    d.mkdir()
+    (d / "cmdline").write_bytes(b"deskflow-core\x00org.schelstraete.DeskFlowDecky")
+    assert find_stray_helpers(proc_root=str(tmp_path), own_pid=555) == []
+
+
+def test_missing_proc_is_not_an_error():
+    assert find_stray_helpers(proc_root="/nonexistent-proc") == []
+
+
+def test_unreadable_cmdline_is_skipped(tmp_path):
+    (tmp_path / "202").mkdir()  # no cmdline file at all
+    assert find_stray_helpers(proc_root=str(tmp_path), own_pid=1) == []

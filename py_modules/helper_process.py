@@ -10,6 +10,7 @@ rather than argv, which is world-readable via ``/proc/<pid>/cmdline``.
 
 import asyncio
 import os
+import signal
 
 __all__ = [
     "APP_ID",
@@ -18,13 +19,14 @@ __all__ = [
     "build_command",
     "build_environment",
     "clean_subprocess_env",
+    "find_stray_helpers",
     "next_backoff_delay",
     "resolve_backend",
 ]
 
 #: Our own application ID. Never reuse upstream's org.deskflow.deskflow -- colliding
 #: with it would break a user's existing Flathub install.
-APP_ID = "io.github.bschelst.DeskflowDeck"
+APP_ID = "org.schelstraete.DeskFlowDecky"
 
 HELPER_COMMAND = "deskflow-core"
 BACKENDS_NEEDING_SOCKET = ("gamescope-libei",)
@@ -53,6 +55,43 @@ def _clean(field, value):
         if bad in text:
             raise LaunchError("{0} contains an illegal character".format(field))
     return text
+
+
+def find_stray_helpers(app_id=APP_ID, proc_root="/proc", own_pid=None):
+    """PIDs of helper processes belonging to ``app_id`` that we do not own.
+
+    A helper orphaned by a crash keeps Deskflow's single-instance lock, and every
+    later start then fails with "an instance of deskflow core is already running" --
+    a permanently wedged plugin that no amount of retrying fixes. Killing our own
+    process group handles the normal case; this covers processes whose parent already
+    died, where there is no group left to signal.
+
+    Matching is on the app id appearing in the command line, so only this project's
+    own helper can ever be selected.
+    """
+    if own_pid is None:
+        own_pid = os.getpid()
+
+    found = []
+    try:
+        entries = os.listdir(proc_root)
+    except OSError:
+        return found
+
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        if pid == own_pid:
+            continue
+        try:
+            with open(os.path.join(proc_root, entry, "cmdline"), "rb") as handle:
+                cmdline = handle.read().decode("utf-8", "replace")
+        except OSError:
+            continue
+        if app_id in cmdline and HELPER_COMMAND in cmdline:
+            found.append(pid)
+    return found
 
 
 def clean_subprocess_env(source=None):
@@ -210,6 +249,14 @@ class HelperProcess:
                 env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
+                # Own process group, so stop() can signal the whole tree.
+                # `flatpak run` execs bwrap which runs deskflow-core; killing only our
+                # direct child leaves the sandboxed process alive, and Deskflow then
+                # refuses every future start with "an instance is already running".
+                # `flatpak kill` is not a reliable cleanup either -- once the parent
+                # dies the instance registry loses track and reports "not running"
+                # while the process is plainly still there.
+                start_new_session=True,
             )
         except BaseException:
             # Never leave a previous, already-dead process object behind: `pid` would
@@ -255,6 +302,18 @@ class HelperProcess:
             pass
         self._reader = None
 
+    def _signal_group(self, process, sig):
+        """Signal the helper's whole process group, falling back to the child alone."""
+        try:
+            os.killpg(os.getpgid(process.pid), sig)
+            return
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+        try:
+            process.send_signal(sig)
+        except (ProcessLookupError, OSError):
+            pass
+
     async def stop(self, grace=TERMINATE_GRACE_S):
         """Ask, then wait, then force -- and confirm death before reporting success."""
         process = self._process
@@ -263,21 +322,13 @@ class HelperProcess:
             self._process = None
             return True
 
-        try:
-            process.terminate()
-        except ProcessLookupError:
-            await self._stop_reader()
-            self._process = None
-            return True
+        self._signal_group(process, signal.SIGTERM)
 
         try:
             await asyncio.wait_for(process.wait(), timeout=grace)
         except asyncio.TimeoutError:
             self._log("warning", "Helper did not exit within %ss; killing it", grace)
-            try:
-                process.kill()
-            except ProcessLookupError:
-                pass
+            self._signal_group(process, signal.SIGKILL)
             try:
                 await asyncio.wait_for(process.wait(), timeout=grace)
             except asyncio.TimeoutError:

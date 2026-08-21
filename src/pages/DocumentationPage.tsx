@@ -143,6 +143,21 @@ export const DocumentationPage: FC = () => (
         explicitly. That can mean the server was reinstalled -- or that something is
         intercepting the connection. Do not accept it without knowing which.
       </Paragraph>
+      <Entry
+        term="If you rejected it"
+        detail={
+          "Nothing is trusted and the helper stops. Turn the Helper toggle back on and " +
+          "you will be asked again on the next connection. Rejecting is not permanent " +
+          "and nothing needs to be reset."
+        }
+      />
+      <Entry
+        term="If you accepted the wrong one"
+        detail={
+          "Use 'Forget trusted fingerprint' on the Settings page, then reconnect. The " +
+          "next connection asks again from scratch."
+        }
+      />
     </PanelSection>
 
     <PanelSection title="Input backends">

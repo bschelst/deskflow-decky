@@ -105,6 +105,25 @@ export function groupFingerprint(fingerprint: string): string {
   return (cleaned.match(/.{2}/g) ?? []).join(":");
 }
 
+/**
+ * Split a fingerprint into short lines for side-by-side comparison.
+ *
+ * A SHA-256 fingerprint is 95 characters once grouped, which overflows the confirmation
+ * modal and runs off the edge of the screen — leaving the trailing bytes unreadable on
+ * the one value the user is being asked to verify character by character.
+ */
+export function fingerprintLines(fingerprint: string, bytesPerLine = 8): string[] {
+  const grouped = groupFingerprint(fingerprint);
+  const pairs = grouped.split(":");
+  if (pairs.length <= bytesPerLine) return [grouped];
+
+  const lines: string[] = [];
+  for (let i = 0; i < pairs.length; i += bytesPerLine) {
+    lines.push(pairs.slice(i, i + bytesPerLine).join(":"));
+  }
+  return lines;
+}
+
 export function truncate(text: string, limit = 160): string {
   return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
 }
