@@ -23,6 +23,7 @@ from helper_process import (
     LaunchError,
     build_command,
     build_environment,
+    clean_subprocess_env,
     next_backoff_delay,
     resolve_backend,
 )
@@ -57,15 +58,25 @@ MAX_LOG_LINES = 1000
 MAX_CONSECUTIVE_FAILURES = 5
 SUBPROCESS_TIMEOUT_S = 30
 
+#: How long the helper must stay up before a run counts as a real connection.
+#: `flatpak run` against an app that is not installed spawns successfully and exits
+#: within milliseconds, so "the process started" is not evidence of anything.
+MIN_HEALTHY_UPTIME_S = 5
+
 
 async def run_command(argv, timeout=SUBPROCESS_TIMEOUT_S):
     """Run an argument list and return stdout.
 
     ``spawn_process`` is ``asyncio.create_subprocess_exec``: it takes an argv list and
     never involves a shell, so no value here can become a second command.
+
+    The environment is scrubbed of PyInstaller's bundled library path first -- Decky
+    runs plugins inside a frozen bundle, and a system binary that inherits it resolves
+    against the wrong libraries.
     """
     process = await spawn_process(
         *argv,
+        env=clean_subprocess_env(),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -104,6 +115,8 @@ class Plugin:
         self._last_discovery = None
         self._input_released_on_last_stop = None
         self._resolved_backend_reported = None
+        self._helper_started_at = None
+        self._helper_installed = None
         self._watcher = FingerprintWatcher(
             on_fingerprint=self._on_peer_fingerprint, logger=decky.logger
         )
@@ -244,6 +257,7 @@ class Plugin:
             )
 
         self._to_state("starting")
+        await self.get_helper_info()  # refreshes self._helper_installed
 
         try:
             if settings["tls_enabled"]:
@@ -273,23 +287,24 @@ class Plugin:
 
         try:
             await self._helper.start(argv, env, on_line=self._on_helper_line)
+            self._helper_started_at = self._loop.time()
         except Exception:  # noqa: BLE001
             decky.logger.exception("Helper failed to start")
             self._to_state("error", reason="helper failed to start")
             return err("internal", "The helper could not be started. See the plugin log.")
 
+        # Stays in "starting" until the helper proves it can survive; _supervise
+        # promotes it. Claiming "connected" on spawn is a lie a crashing helper
+        # exposes immediately.
         self._supervisor = self._loop.create_task(self._supervise())
-        self._to_state("connected")
-
-        # A fallback backend still works, but not as well; saying so is more useful
-        # than reporting a flat "connected" and letting the user wonder.
-        if backend == "x11-xtest" and settings["input_backend"] == "auto":
-            self._to_state(
-                "degraded",
-                reason="Using the XWayland fallback; Gamescope's input socket was not found.",
-            )
-
         return ok({"state": self._state.state})
+
+    def _give_up_reason(self, failures):
+        """Why we stopped retrying, phrased so the next step is obvious."""
+        base = "The helper failed {0} times in a row".format(failures)
+        if self._helper_installed is False:
+            return base + ". The Deskflow helper does not appear to be installed."
+        return base + ". See the plugin log for details."
 
     def _on_helper_line(self, line):
         """Observer for helper output. Runs in the drain task; must not raise."""
@@ -349,13 +364,45 @@ class Plugin:
         failures = 0
         try:
             while True:
-                code = await self._helper.wait()
+                waiter = self._loop.create_task(self._helper.wait())
+                try:
+                    code = await asyncio.wait_for(asyncio.shield(waiter), MIN_HEALTHY_UPTIME_S)
+                except asyncio.TimeoutError:
+                    # Survived long enough to count as a real connection.
+                    self._to_state("connected")
+                    if self._resolved_backend == "x11-xtest" and (
+                        self._settings["input_backend"] == "auto"
+                    ):
+                        # A fallback backend works, but not as well; say so rather than
+                        # reporting a flat "connected" and letting the user wonder.
+                        self._to_state(
+                            "degraded",
+                            reason=(
+                                "Using the XWayland fallback; Gamescope's input socket "
+                                "was not found."
+                            ),
+                        )
+                    code = await waiter
+
                 if code == 0:
                     self._to_state("stopped")
                     return
 
-                reason = "helper exited with code {0}".format(code)
+                uptime = self._loop.time() - (self._helper_started_at or self._loop.time())
+
+                if code is None:
+                    # A retry that never produced a process at all.
+                    reason = "the helper could not be started"
+                    uptime = 0.0
+                else:
+                    reason = "helper exited with code {0} after {1:.1f}s".format(code, uptime)
                 decky.logger.warning(reason)
+
+                # Only a run that actually lasted counts as recovery. Resetting on
+                # "the process spawned" retries forever when the binary exits
+                # immediately -- which is exactly what an uninstalled flatpak does.
+                if uptime >= MIN_HEALTHY_UPTIME_S:
+                    failures = 0
                 failures += 1
 
                 if not self._settings.get("reconnect_enabled"):
@@ -363,9 +410,7 @@ class Plugin:
                     return
 
                 if failures >= MAX_CONSECUTIVE_FAILURES:
-                    self._to_state(
-                        "error", reason="the helper failed {0} times in a row".format(failures)
-                    )
+                    self._to_state("error", reason=self._give_up_reason(failures))
                     return
 
                 self._to_state("disconnected", reason=reason)
@@ -373,8 +418,11 @@ class Plugin:
                     next_backoff_delay(failures, self._settings["reconnect_max_backoff_s"])
                 )
 
-                if await self._retry():
-                    failures = 0
+                if not await self._retry():
+                    failures += 1
+                    if failures >= MAX_CONSECUTIVE_FAILURES:
+                        self._to_state("error", reason=self._give_up_reason(failures))
+                        return
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -399,13 +447,13 @@ class Plugin:
                 self._to_state("starting")
                 self._watcher.reset()
                 await self._helper.start(argv, env, on_line=self._on_helper_line)
+                self._helper_started_at = self._loop.time()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
                 decky.logger.warning("Reconnect attempt failed: %s", exc)
                 return False
             self._resolved_backend = backend
-            self._to_state("connected")
             return True
 
     @safe
@@ -489,6 +537,7 @@ class Plugin:
                 await run_command(["flatpak", "info", "--user", "--show-ref", APP_ID], timeout=15)
             ).decode("utf-8", "replace").strip()
         except Exception:  # noqa: BLE001 - "not installed" is an answer, not a failure
+            self._helper_installed = False
             return ok(
                 {
                     "installed": False,
@@ -507,6 +556,7 @@ class Plugin:
         except Exception:  # noqa: BLE001 - a missing version is cosmetic
             decky.logger.debug("Could not read the helper version")
 
+        self._helper_installed = True
         return ok(
             {
                 "installed": True,
@@ -527,29 +577,43 @@ class Plugin:
         Delegates to packaging/install-helper.sh, which verifies the bundle's SHA-256
         before unpacking anything and installs at user scope.
         """
-        script = os.path.join(decky.DECKY_PLUGIN_DIR, "packaging", "install-helper.sh")
-        if not os.path.isfile(script):
-            return err("install_failed", "The installer script is missing from the plugin.")
+        decky.logger.info("Helper install requested.")
 
-        bundle = None
-        for directory in (
+        searched = [
             os.path.join(decky.DECKY_PLUGIN_DIR, "bin"),
             decky.DECKY_PLUGIN_DIR,
-        ):
+        ]
+        bundle = None
+        for directory in searched:
             candidate = os.path.join(directory, "{0}.flatpak".format(APP_ID))
             if os.path.isfile(candidate):
                 bundle = candidate
                 break
 
         if bundle is None:
+            # Expected until M2: the patched helper has not been built yet, so no
+            # bundle ships with the plugin. Say that plainly rather than implying the
+            # user mislaid a file.
+            decky.logger.warning(
+                "No helper bundle found. Looked in: %s", ", ".join(searched)
+            )
             return err(
                 "not_installed",
-                "No helper bundle was found. Download it from the project's releases "
-                "and run packaging/install-helper.sh in Desktop Mode.",
+                "No helper bundle is bundled with this build yet. The patched Deskflow "
+                "helper still has to be built (milestone M2). Once a release exists, "
+                "put {0}.flatpak in the plugin's bin/ folder and press this again.".format(
+                    APP_ID
+                ),
             )
+
+        script = os.path.join(decky.DECKY_PLUGIN_DIR, "packaging", "install-helper.sh")
+        if not os.path.isfile(script):
+            decky.logger.error("Installer script missing at %s", script)
+            return err("install_failed", "The installer script is missing from the plugin.")
 
         # Stop first: replacing the binary under a running helper would leave it
         # holding input devices with no way to shut it down cleanly.
+        decky.logger.info("Installing helper from %s", bundle)
         await self._stop()
 
         try:
@@ -560,6 +624,7 @@ class Plugin:
             decky.logger.exception("Helper install failed")
             return err("install_failed", "The helper could not be installed. See the plugin log.")
 
+        decky.logger.info("Helper install completed.")
         info = await self.get_helper_info()
         return ok((info.get("data") or {}))
 

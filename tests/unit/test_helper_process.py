@@ -13,6 +13,7 @@ from helper_process import (
     LaunchError,
     build_command,
     build_environment,
+    clean_subprocess_env,
     next_backoff_delay,
     resolve_backend,
 )
@@ -188,3 +189,53 @@ def test_backoff_never_returns_zero():
 
 def test_backoff_respects_a_small_cap():
     assert next_backoff_delay(10, maximum=1) == 1
+
+
+# --------------------------------------------------------------- pyinstaller environment
+
+# Decky runs plugins inside a PyInstaller bundle. Observed on hardware: the system
+# openssl inherited the bundle's LD_LIBRARY_PATH and failed with
+# "libssl.so.3: version `OPENSSL_3.4.0' not found".
+
+
+def test_bundle_library_path_is_removed():
+    source = {"PATH": "/usr/bin", "LD_LIBRARY_PATH": "/tmp/_MEIabc123"}
+    assert "LD_LIBRARY_PATH" not in clean_subprocess_env(source)
+
+
+def test_original_library_path_is_restored_when_pyinstaller_saved_one():
+    source = {
+        "LD_LIBRARY_PATH": "/tmp/_MEIabc123",
+        "LD_LIBRARY_PATH_ORIG": "/usr/local/lib",
+    }
+    cleaned = clean_subprocess_env(source)
+    assert cleaned["LD_LIBRARY_PATH"] == "/usr/local/lib"
+    assert "LD_LIBRARY_PATH_ORIG" not in cleaned
+
+
+def test_an_empty_original_is_treated_as_absent():
+    source = {"LD_LIBRARY_PATH": "/tmp/_MEIabc", "LD_LIBRARY_PATH_ORIG": ""}
+    assert "LD_LIBRARY_PATH" not in clean_subprocess_env(source)
+
+
+def test_other_bundle_markers_are_dropped():
+    source = {"_MEIPASS2": "/tmp/_MEIabc", "PYINSTALLER_RESET_ENVIRONMENT": "1"}
+    cleaned = clean_subprocess_env(source)
+    assert "_MEIPASS2" not in cleaned
+    assert "PYINSTALLER_RESET_ENVIRONMENT" not in cleaned
+
+
+def test_unrelated_variables_are_preserved():
+    source = {"PATH": "/usr/bin", "HOME": "/home/deck", "XDG_RUNTIME_DIR": "/run/user/1000"}
+    assert clean_subprocess_env(source) == source
+
+
+def test_the_source_mapping_is_not_mutated():
+    source = {"LD_LIBRARY_PATH": "/tmp/_MEIabc"}
+    clean_subprocess_env(source)
+    assert source == {"LD_LIBRARY_PATH": "/tmp/_MEIabc"}
+
+
+def test_a_clean_environment_passes_through_unchanged():
+    source = {"PATH": "/usr/bin"}
+    assert clean_subprocess_env(source) == {"PATH": "/usr/bin"}

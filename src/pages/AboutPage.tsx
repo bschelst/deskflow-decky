@@ -27,18 +27,18 @@ export const AboutPage: FC = () => {
     <>
       <PanelSection title="Deskflow Decky">
         <PanelSectionRow>
-          <Field label="Version" bottomSeparator="none">
+          <Field label="Version" bottomSeparator="none" focusable>
             {version}
           </Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <Field label="Helper" bottomSeparator="none">
+          <Field label="Helper" bottomSeparator="none" focusable>
             {helper === null ? "Checking…" : helper.installed ? helper.appId : "Not installed"}
           </Field>
         </PanelSectionRow>
         {helper?.installed && helper.version ? (
           <PanelSectionRow>
-            <Field label="Helper version" bottomSeparator="none">
+            <Field label="Helper version" bottomSeparator="none" focusable>
               {helper.version}
             </Field>
           </PanelSectionRow>
@@ -48,6 +48,7 @@ export const AboutPage: FC = () => {
             <Field
               label="Helper permissions"
               bottomSeparator="none"
+              focusable
               description="Access to Gamescope's input socket is granted per launch, scoped to one socket."
             >
               {helper.permissions.join(", ")}
@@ -55,18 +56,19 @@ export const AboutPage: FC = () => {
           </PanelSectionRow>
         ) : null}
         <PanelSectionRow>
-          <Field label="Author">{author}</Field>
+          <Field label="Author" focusable>{author}</Field>
         </PanelSectionRow>
       </PanelSection>
 
       <PanelSection title="Licence">
         <PanelSectionRow>
-          <Field label="Licence" bottomSeparator="none">
+          <Field label="Licence" bottomSeparator="none" focusable>
             GPL-2.0
           </Field>
         </PanelSectionRow>
         <PanelSectionRow>
           <Field
+            focusable
             label="Built on Deskflow"
             description={
               "The input helper is derived from Deskflow, licensed GPL-2.0-only with an " +

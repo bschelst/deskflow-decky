@@ -17,6 +17,7 @@ __all__ = [
     "LaunchError",
     "build_command",
     "build_environment",
+    "clean_subprocess_env",
     "next_backoff_delay",
     "resolve_backend",
 ]
@@ -44,6 +45,34 @@ def _clean(field, value):
         if bad in text:
             raise LaunchError("{0} contains an illegal character".format(field))
     return text
+
+
+def clean_subprocess_env(source=None):
+    """An environment safe for launching *system* binaries from the Decky backend.
+
+    Decky runs plugins inside a PyInstaller bundle, which prepends its own unpacked
+    library directory to ``LD_LIBRARY_PATH``. A system binary inherited into that
+    environment resolves against the bundle's libraries instead of the system's, and
+    fails. Observed on hardware as::
+
+        openssl: /tmp/_MEIxxxxxx/libssl.so.3: version `OPENSSL_3.4.0' not found
+
+    PyInstaller preserves whatever was there before in ``LD_LIBRARY_PATH_ORIG``, so
+    restore that when present and otherwise drop the variable entirely.
+    """
+    env = dict(os.environ if source is None else source)
+
+    original = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original:
+        env["LD_LIBRARY_PATH"] = original
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+
+    # Other markers of the frozen bundle; harmless to remove, confusing to inherit.
+    for name in ("_MEIPASS2", "LD_PRELOAD_ORIG", "PYINSTALLER_RESET_ENVIRONMENT"):
+        env.pop(name, None)
+
+    return env
 
 
 def resolve_backend(requested, discovery, display=None):

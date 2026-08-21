@@ -17,16 +17,24 @@ import type { ErrorCode } from "../api/types";
  * label, so a paragraph passed as children renders beside a permanently empty gutter.
  * The `description` slot is the full-width one.
  */
+/**
+ * Every row is `focusable`.
+ *
+ * Steam scrolls a page by moving focus, so a page made entirely of static text has
+ * nothing to focus and cannot be scrolled with the gamepad at all -- it just sits
+ * there showing the first screenful. Marking prose rows focusable gives the D-pad
+ * somewhere to land, and the view follows.
+ */
 const Paragraph: FC<{ children: string }> = ({ children }) => (
   <PanelSectionRow>
-    <Field description={children} bottomSeparator="none" />
+    <Field description={children} bottomSeparator="none" focusable />
   </PanelSectionRow>
 );
 
 /** A named thing and its explanation: name on the left, prose full-width beneath. */
 const Entry: FC<{ term: string; detail: string }> = ({ term, detail }) => (
   <PanelSectionRow>
-    <Field label={term} description={detail} bottomSeparator="standard" />
+    <Field label={term} description={detail} bottomSeparator="standard" focusable />
   </PanelSectionRow>
 );
 

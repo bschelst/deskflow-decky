@@ -1,6 +1,7 @@
 # Node / frontend
 node_modules/
 dist/
+docs/
 *.tsbuildinfo
 
 # Decky CLI build output
@@ -27,6 +28,16 @@ helper/flatpak/repo/
 .vscode/settings.json
 .vscode/defsettings.local.json
 
+# cleaver scripts
+.cl*
+
+# leaver scripts
+.lea*
+
+# testst
+tests/
+
+
 # Secrets and generated runtime state — never commit these
 *.pem
 *.key
@@ -41,3 +52,8 @@ diagnostics-*.txt
 
 # OS
 .DS_Store
+
+# temp scripts, working nots
+PR*md
+deskflo*md
+helper/*md

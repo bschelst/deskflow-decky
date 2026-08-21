@@ -49,9 +49,22 @@ const logLevelOptions = LOG_LEVELS.map((value) => ({
  *  control column and leave the label gutter empty. */
 const Note: FC<{ children: string }> = ({ children }) => (
   <PanelSectionRow>
-    <Field description={children} bottomSeparator="none" />
+    <Field description={children} bottomSeparator="none" focusable />
   </PanelSectionRow>
 );
+
+/**
+ * Where a message came from, so it can be shown beside the control that produced it.
+ *
+ * A single banner at the top of the page is invisible when the button that set it sits
+ * several sections further down — the action then looks like it did nothing at all,
+ * which is exactly how "Install helper" appeared to fail.
+ */
+type NoticeWhere = "connection" | "security" | "helper" | "diagnostics";
+interface Notice {
+  where: NoticeWhere;
+  text: string;
+}
 
 const SelfTestRow: FC<{ check: SelfTestCheck }> = ({ check }) => (
   <PanelSectionRow>
@@ -73,7 +86,7 @@ export const SettingsPage: FC = () => {
   const { status } = useDeskflowStatus();
   const [settings, setLocal] = useState<Settings | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [banner, setBanner] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [helper, setHelper] = useState<HelperInfo | null>(null);
   const [checks, setChecks] = useState<SelfTestCheck[] | null>(null);
   // One flag for every action button on the page: without it a double-tap can issue
@@ -89,11 +102,19 @@ export const SettingsPage: FC = () => {
     }
   }, []);
 
+  const say = useCallback((where: NoticeWhere, text: string) => {
+    setNotice({ where, text });
+  }, []);
+
+  /** Renders the current message only in the section that raised it. */
+  const NoticeFor: FC<{ where: NoticeWhere }> = ({ where }) =>
+    notice && notice.where === where ? <Note>{notice.text}</Note> : null;
+
   useEffect(() => {
     void (async () => {
       const result = await getSettings();
       if (result.ok) setLocal(result.data);
-      else setBanner(result.error.message);
+      else setNotice({ where: "connection", text: result.error.message });
 
       const info = await getHelperInfo();
       if (info.ok) setHelper(info.data);
@@ -120,7 +141,7 @@ export const SettingsPage: FC = () => {
         delete next[field];
         return next;
       });
-      setBanner(null);
+      setNotice(null);
     } else {
       setFieldErrors((current) => ({ ...current, [field]: result.error.message }));
     }
@@ -134,12 +155,6 @@ export const SettingsPage: FC = () => {
 
   return (
     <>
-      {banner ? (
-        <PanelSection>
-          <Note>{banner}</Note>
-        </PanelSection>
-      ) : null}
-
       <PanelSection title="Connection">
         <PanelSectionRow>
           <DropdownItem
@@ -195,6 +210,8 @@ export const SettingsPage: FC = () => {
             onCommit={(value) => void commit({ client_name: value })}
           />
         </PanelSectionRow>
+
+        <NoticeFor where="connection" />
       </PanelSection>
 
       <PanelSection title="Security">
@@ -238,13 +255,18 @@ export const SettingsPage: FC = () => {
             onClick={() =>
               void act(async () => {
                 const result = await forgetFingerprint();
-                setBanner(result.ok ? "Trusted fingerprint forgotten." : result.error.message);
+                say(
+                  "security",
+                  result.ok ? "Trusted fingerprint forgotten." : result.error.message,
+                );
               })
             }
           >
             Forget trusted fingerprint
           </ButtonItem>
         </PanelSectionRow>
+
+        <NoticeFor where="security" />
       </PanelSection>
 
       <PanelSection title="Input">
@@ -335,9 +357,9 @@ export const SettingsPage: FC = () => {
                 const result = await installHelper();
                 if (result.ok) {
                   setHelper(result.data);
-                  setBanner("Helper installed.");
+                  say("helper", "Helper installed.");
                 } else {
-                  setBanner(result.error.message);
+                  say("helper", result.error.message);
                 }
               })
             }
@@ -354,13 +376,15 @@ export const SettingsPage: FC = () => {
             onClick={() =>
               void act(async () => {
                 const result = await restartHelper();
-                if (!result.ok) setBanner(result.error.message);
+                say("helper", result.ok ? "Helper restarted." : result.error.message);
               })
             }
           >
             Restart helper
           </ButtonItem>
         </PanelSectionRow>
+
+        <NoticeFor where="helper" />
       </PanelSection>
 
       <PanelSection title="Diagnostics">
@@ -381,7 +405,7 @@ export const SettingsPage: FC = () => {
               void act(async () => {
                 const result = await runSelfTest();
                 if (result.ok) setChecks(result.data.checks);
-                else setBanner(result.error.message);
+                else say("diagnostics", result.error.message);
               })
             }
           >
@@ -407,7 +431,8 @@ export const SettingsPage: FC = () => {
             onClick={() =>
               void act(async () => {
                 const result = await exportDiagnostics();
-                setBanner(
+                say(
+                  "diagnostics",
                   result.ok
                     ? `Diagnostics written to ${result.data.path}`
                     : result.error.message,
@@ -418,6 +443,8 @@ export const SettingsPage: FC = () => {
             Export diagnostics
           </ButtonItem>
         </PanelSectionRow>
+
+        <NoticeFor where="diagnostics" />
       </PanelSection>
     </>
   );
