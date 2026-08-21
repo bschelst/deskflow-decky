@@ -128,3 +128,60 @@ def test_watcher_records_the_resolved_backend():
 
 def test_watcher_backend_defaults_to_none():
     assert FingerprintWatcher().reported_backend is None
+
+
+# --------------------------------------------------------- connection state from logs
+
+# The helper process does NOT exit when the server goes away -- it keeps running and
+# retries internally. Watching only for process exit therefore leaves the plugin
+# reporting "connected" through an entire outage, and no disconnect is ever noticed.
+# These are the exact strings deskflow-core emits (ClientApp.cpp, ServerProxy.cpp).
+
+from log_watch import classify_connection
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "[2026-08-22T00:15:05] IPC: connected to server",
+        "IPC: connected to server",
+    ],
+)
+def test_detects_a_completed_connection(line):
+    assert classify_connection(line) == "connected"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "[2026-08-22T00:15:14] NOTE: server is dead",
+        "IPC: disconnected from server",
+        "WARNING: failed to connect to server: Connection refused",
+        "WARNING: failed to connect to server: server is not responding",
+        "ERROR: failed to connect to server: Timed out",
+    ],
+)
+def test_detects_a_lost_connection(line):
+    assert classify_connection(line) == "lost"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "",
+        "INFO: using ei screen for wayland, ei backend: socket",
+        "IPC: connecting to 'host': 1.2.3.4:24800",
+        "INFO: local languages: en",
+        "WARNING: keyboard device Gamescope Virtual Input does not have a keymap",
+        None,
+        42,
+    ],
+)
+def test_ignores_everything_else(line):
+    assert classify_connection(line) is None
+
+
+def test_connecting_is_not_mistaken_for_connected():
+    # "connecting to" must not match "connected to server", or every retry would look
+    # like a successful connection and the outage would never be reported.
+    assert classify_connection("IPC: connecting to 'desktop': 10.0.0.1:24800") is None

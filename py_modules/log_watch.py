@@ -15,7 +15,7 @@ changing a test alongside it.
 
 import re
 
-__all__ = ["FingerprintWatcher", "extract_peer_fingerprint"]
+__all__ = ["FingerprintWatcher", "classify_connection", "extract_peer_fingerprint"]
 
 SHA256_HEX_LENGTH = 64
 
@@ -30,6 +30,28 @@ _PEER_WORDS = ("server", "peer", "remote")
 _OWN_WORDS = ("local", "our ", "ours")
 
 _BACKEND_LINE = re.compile(r"ei backend:\s*(\w+)", re.IGNORECASE)
+
+# The helper does not exit when the server goes away: it keeps running and retries on
+# its own. Watching only for process exit therefore leaves the plugin reporting
+# "connected" straight through an outage. These are the exact strings deskflow-core
+# emits (ClientApp::handleClientConnected / handleClientDisconnected, ServerProxy).
+_CONNECTED_LINE = re.compile(r"\bconnected to server\b", re.IGNORECASE)
+_LOST_LINES = (
+    re.compile(r"\bserver is dead\b", re.IGNORECASE),
+    re.compile(r"\bdisconnected from server\b", re.IGNORECASE),
+    re.compile(r"\bfailed to connect to server\b", re.IGNORECASE),
+)
+
+
+def classify_connection(line):
+    """'connected', 'lost', or None for a line of helper output."""
+    if not isinstance(line, str) or not line:
+        return None
+    if any(pattern.search(line) for pattern in _LOST_LINES):
+        return "lost"
+    if _CONNECTED_LINE.search(line):
+        return "connected"
+    return None
 
 
 def extract_peer_fingerprint(line):

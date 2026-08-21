@@ -30,7 +30,7 @@ from helper_process import (
     next_backoff_delay,
     resolve_backend,
 )
-from log_watch import FingerprintWatcher
+from log_watch import FingerprintWatcher, classify_connection
 from screen_size import choose_screen_size, detection_commands
 from state import HelperState, IllegalTransition
 from tls import (
@@ -486,6 +486,15 @@ class Plugin:
         self._watcher.feed(line)
         if self._watcher.reported_backend is not None:
             self._resolved_backend_reported = self._watcher.reported_backend
+
+        # Track the *connection*, not just the process. deskflow-core stays alive and
+        # retries internally when the server goes away, so waiting for the process to
+        # exit would report "connected" for the whole outage and never notify.
+        event = classify_connection(line)
+        if event == "connected" and self._state.state != "connected":
+            self._to_state("connected")
+        elif event == "lost" and self._state.state in _HEALTHY_STATES:
+            self._to_state("disconnected", reason="the server stopped responding")
 
     def _to_state(self, target, reason=None):
         """Transition, tolerating an illegal move rather than killing the caller.
