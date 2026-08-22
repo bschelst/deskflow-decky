@@ -73,7 +73,7 @@ const TROUBLESHOOTING: Array<{ code: ErrorCode; meaning: string; fix: string }> 
   {
     code: "desktop_app_not_found",
     meaning: "The stock Deskflow desktop app is not installed, or has not been run yet.",
-    fix: "Install org.deskflow.deskflow and open it once in Desktop Mode so it writes its own config, then try again.",
+    fix: "Install org.deskflow.deskflow and open it once in Desktop Mode so it writes its own config, then try again. The sync only knows how to find the flatpak install (org.deskflow.deskflow under ~/.var/app) -- which is the only one SteamOS supports anyway, so this should not come up in practice.",
   },
   {
     code: "tls_setup_failed",
