@@ -230,6 +230,19 @@ def _screen_extent(field, value):
     return _bounded_int(field, value, MIN_SCREEN_EXTENT, MAX_SCREEN_EXTENT)
 
 
+_XKB_LAYOUT_RE = re.compile(r"^[a-z]{2,10}$")
+
+
+def _keyboard_layout(field, value):
+    if not isinstance(value, str) or _is_bool(value):
+        raise ValidationError(field, "must be text")
+    if value == "":
+        return value
+    if not _XKB_LAYOUT_RE.match(value):
+        raise ValidationError(field, "must be a short lowercase XKB layout name (e.g. us, be, de)")
+    return value
+
+
 MODES = ("client", "server")
 INPUT_BACKENDS = ("auto", "gamescope-libei", "x11-xtest", "uinput")
 ACTIVATION_MODES = ("manual", "always")
@@ -253,6 +266,7 @@ FIELDS = {
     "screen_width": (0, _screen_extent),
     "screen_height": (0, _screen_extent),
     "activation_mode": ("manual", _enum(ACTIVATION_MODES)),
+    "keyboard_layout": ("", _keyboard_layout),
     "log_level": ("info", _enum(LOG_LEVELS)),
 }
 

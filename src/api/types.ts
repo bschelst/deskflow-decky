@@ -87,6 +87,7 @@ export interface Settings {
   screen_width: number;
   screen_height: number;
   activation_mode: ActivationMode;
+  keyboard_layout: string;
   log_level: LogLevel;
 }
 

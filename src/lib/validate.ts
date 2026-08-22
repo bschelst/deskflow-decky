@@ -111,6 +111,11 @@ export function validateField(field: keyof Settings, value: unknown): string | n
         ? null
         : "Unknown log level.";
 
+    case "keyboard_layout":
+      if (typeof value !== "string") return "Must be text.";
+      if (value === "") return null;
+      return /^[a-z]{2,10}$/.test(value) ? null : "Lowercase XKB layout name (e.g. us, be, de).";
+
     case "tls_enabled":
     case "check_peer_fingerprints":
     case "autostart_gaming_mode":

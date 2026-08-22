@@ -178,6 +178,7 @@ export function isSettings(value: unknown): value is Settings {
     isInt(value.screen_width) &&
     isInt(value.screen_height) &&
     isMember(value.activation_mode, ACTIVATION_MODES) &&
+    isString(value.keyboard_layout) &&
     isMember(value.log_level, LOG_LEVELS)
   );
 }

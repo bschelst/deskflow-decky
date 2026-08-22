@@ -223,6 +223,23 @@ export const DocumentationPage: FC = () => (
       />
     </PanelSection>
 
+    <PanelSection title="Keyboard layout">
+      <Paragraph>
+        If the server's keyboard layout differs from the one this machine expects (for
+        example Belgian AZERTY on the server and US QWERTY here), keys may be swapped or
+        produce the wrong characters.
+      </Paragraph>
+      <Paragraph>
+        Set the Keyboard layout field on the Settings page to the XKB layout name the
+        helper should use: "be" for Belgian, "de" for German, "fr" for French, "gb" for
+        UK, "us" for US, and so on. Leave it empty to use the system default.
+      </Paragraph>
+      <Paragraph>
+        The setting takes effect the next time the helper starts. If you change it while
+        the helper is running, turn it off and back on.
+      </Paragraph>
+    </PanelSection>
+
     <PanelSection title="Server mode">
       <Paragraph>
         The Deck can also act as a Deskflow server, sharing its own input with other

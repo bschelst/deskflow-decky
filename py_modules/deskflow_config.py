@@ -61,8 +61,12 @@ def render_ini(settings, cert_path):
         lines += [
             "[client]",
             "remoteHost={0}".format(_safe("server_host", settings["server_host"])),
+            "languageSync=false",
             "",
         ]
+
+    log_level_map = {"error": 1, "warn": 2, "info": 4, "debug": 6}
+    log_int = log_level_map.get(settings.get("log_level", "info"), 4)
 
     lines += [
         "[security]",
@@ -70,6 +74,9 @@ def render_ini(settings, cert_path):
         "checkPeerFingerprints={0}".format(_bool(settings["check_peer_fingerprints"])),
         "certificate={0}".format(certificate),
         "keySize=2048",
+        "",
+        "[daemon]",
+        "logLevel={0}".format(log_int),
         "",
     ]
 

@@ -1,0 +1,74 @@
+From 2646d3eea6e3082530150a50cc5a2eb995029750 Mon Sep 17 00:00:00 2001
+From: Bart Schelstraete <bart@schelstraete.org>
+Date: Sat, 22 Aug 2026 04:28:45 +0200
+Subject: [PATCH] fix: ignore server modifier mask when selecting character key
+ entry
+
+findBestKey selects a keymap entry whose required modifiers best match
+the desiredMask, which is the modifier state from the server. When the
+server and client use different keyboard layouts, the same character
+needs different modifiers on each side: Belgian AZERTY needs Shift+1 to
+produce '1', while US QWERTY produces '1' without Shift and '!' with
+Shift.
+
+When the server sends KeyID '1' with mask=Shift (because Shift was held
+on the Belgian keyboard), findBestKey picks the '!' entry on the US
+client (because '!' requires Shift, which matches the desired mask).
+The client then types '!' instead of '1'.
+
+Pass 0 instead of desiredMask when selecting character key entries, so
+the entry is chosen based on the KeyID alone. The modifier adjustments
+in keysForKeyItem already handle pressing or releasing Shift as needed
+to produce the correct character on the local keymap.
+---
+ src/lib/deskflow/KeyMap.cpp | 20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/src/lib/deskflow/KeyMap.cpp b/src/lib/deskflow/KeyMap.cpp
+index 967e2bc..66d03b9 100644
+--- a/src/lib/deskflow/KeyMap.cpp
++++ b/src/lib/deskflow/KeyMap.cpp
+@@ -282,7 +282,13 @@ const KeyMap::KeyItem *KeyMap::mapKey(
+     if (isCommand(desiredMask)) {
+       item = mapCommandKey(keys, id, group, activeModifiers, currentState, desiredMask, isAutoRepeat, lang);
+     } else {
+-      item = mapCharacterKey(keys, id, group, activeModifiers, currentState, desiredMask, isAutoRepeat, lang);
++      // Pass 0 instead of the server's desiredMask for regular character keys.
++      // The KeyID already encodes the intended character; the server's modifier
++      // state must not influence which keymap entry is selected or how modifiers
++      // are adjusted, because the same character may require different modifiers
++      // on different layouts (e.g. Shift+1 = '1' on Belgian, '!' on US).
++      // Modifier keys go through mapModifierKey and keep the real desiredMask.
++      item = mapCharacterKey(keys, id, group, activeModifiers, currentState, 0, isAutoRepeat, lang);
+     }
+     break;
+   }
+@@ -585,8 +591,14 @@ const KeyMap::KeyItem *KeyMap::mapCharacterKey(
+     return nullptr;
+   }
+ 
+-  // get keys to press for key
+-  const auto itemList = getKeyItemList(i->second, getLanguageGroupID(group, lang), desiredMask);
++  // Select the key entry that matches the KeyID, not the server's modifier
++  // state.  The KeyID already encodes the intended character; letting the
++  // server's desiredMask choose the entry causes the wrong character when the
++  // server and client have different layouts (e.g. Belgian AZERTY Shift+1 = '1',
++  // but US QWERTY Shift+1 = '!').  Passing 0 makes findBestKey pick the entry
++  // whose required modifiers are closest to "none", which is the unshifted
++  // mapping of the KeyID on the local keymap.
++  const auto itemList = getKeyItemList(i->second, getLanguageGroupID(group, lang), 0);
+   if (!itemList || itemList->empty()) {
+     // no mapping for this keysym
+     LOG_DEBUG1("no mapping for key %04x", id);
+@@ -602,7 +614,7 @@ const KeyMap::KeyItem *KeyMap::mapCharacterKey(
+ 
+   // add each key
+   for (auto &item : *itemList) {
+-    if (!keysForKeyItem(item, newGroup, newModifiers, newState, desiredMask, 0, isAutoRepeat, keys, lang)) {
++    if (!keysForKeyItem(item, newGroup, newModifiers, newState, keyItem.m_required, 0, isAutoRepeat, keys, lang)) {
+       LOG_DEBUG1("can't map key");
+       keys.clear();
+       return nullptr;
+-- 
+2.53.0
+

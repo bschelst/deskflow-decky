@@ -47,6 +47,7 @@ const validSettings: Settings = {
   screen_width: 0,
   screen_height: 0,
   activation_mode: "manual",
+  keyboard_layout: "",
   log_level: "info",
 };
 

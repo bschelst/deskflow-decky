@@ -104,24 +104,6 @@ modules:
     cleanup:
       - "*"
 
-  - name: wl-clipboard
-    # ~60KB. Deskflow's Wayland clipboard shells out to wl-copy/wl-paste and reports
-    # the feature unavailable unless both are on PATH, so they have to live in the
-    # sandbox. Shipping them does not enable anything by itself: the plugin writes
-    # core/wlClipboard, which is off unless the user turns it on.
-    buildsystem: meson
-    config-opts:
-      # Completions install outside the prefix, into the read-only runtime:
-      #   OSError: [Errno 30] Read-only file system: '/usr/share/fish'
-      # Nothing here has a shell for a user to complete in. Only zsh and fish have
-      # options; wl-clipboard has no bashcompletiondir, and passing one fails configure.
-      - -Dzshcompletiondir=no
-      - -Dfishcompletiondir=no
-    sources:
-      - type: git
-        url: https://github.com/bugaevc/wl-clipboard.git
-        tag: v2.2.1
-
   - name: deskflow
     buildsystem: cmake-ninja
     config-opts:
@@ -137,3 +119,7 @@ modules:
         path: ../patches/0001-add-ei-backend-selection.patch
       - type: patch
         path: ../patches/0002-fixed-screen-size-and-retry-backoff.patch
+      - type: patch
+        path: ../patches/0003-explicit-xkb-layout-from-environment.patch
+      - type: patch
+        path: ../patches/0004-ignore-server-modmask-for-character-keys.patch

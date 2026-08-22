@@ -90,7 +90,28 @@ SERVER_PROBE_TIMEOUT_S = 4
 
 #: Minimum seconds between two toast notifications. A server that is stopped and
 #: restarted rapidly would otherwise produce a connected/disconnected pair per cycle.
-NOTIFY_COOLDOWN_S = 10
+NOTIFY_COOLDOWN_S = 60
+
+_LOG_SEVERITY = {"error": 0, "warn": 1, "info": 2, "debug": 3}
+
+
+def _should_log_helper_line(line, configured_level):
+    """Return True if this helper output line passes the configured log level filter.
+
+    The helper prefixes lines with ``INFO:``, ``WARNING:``, ``NOTE:``, ``IPC:``, etc.
+    Anything at or above the configured severity passes; unrecognised prefixes always pass.
+    """
+    threshold = _LOG_SEVERITY.get(configured_level, 2)
+    upper = line.upper()
+    if "ERROR:" in upper or "FATAL:" in upper:
+        return True
+    if "WARNING:" in upper:
+        return threshold >= 1
+    if "INFO:" in upper or "NOTE:" in upper or "IPC:" in upper:
+        return threshold >= 2
+    if "DEBUG:" in upper:
+        return threshold >= 3
+    return True
 
 
 async def run_command(argv, timeout=SUBPROCESS_TIMEOUT_S):
@@ -510,11 +531,9 @@ class Plugin:
 
     def _on_helper_line(self, line):
         """Observer for helper output. Runs in the drain task; must not raise."""
-        # Log it. Without this the helper's own diagnosis of a failure is invisible --
-        # the plugin could only report "exited with code 1" while the actual reason
-        # (a missing binary, an unreadable config) went nowhere.
         if line.strip():
-            decky.logger.info("deskflow-decky helper: %s", redact_line(line))
+            if _should_log_helper_line(line, self._settings.get("log_level", "info")):
+                decky.logger.info("deskflow-decky helper: %s", redact_line(line))
 
         self._watcher.feed(line)
         if self._watcher.reported_backend is not None:

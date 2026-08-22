@@ -115,6 +115,7 @@ def test_environment_is_explicit_not_inherited():
             "DESKFLOW_EI_BACKEND",
             "DESKFLOW_SCREEN_SIZE",
             "DISPLAY",
+            "XKB_DEFAULT_LAYOUT",
         }
     )
 

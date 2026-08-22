@@ -34,7 +34,7 @@ export const LogsModal: FC<{ closeModal?: () => void }> = ({ closeModal }) => {
         </PanelSectionRow>
       ) : null}
 
-      {(lines ?? []).map((line, index) => (
+      {(lines ?? []).filter((l) => l.trim() !== "").map((line, index) => (
         // Log lines have no stable identity; index is the honest key here.
         <PanelSectionRow key={index}>
           <Field description={line} bottomSeparator="none" focusable />

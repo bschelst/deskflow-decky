@@ -324,6 +324,20 @@ export const SettingsPage: FC = () => {
           onCommit={(raw) => commitNumber("screen_height", raw)}
         />
 
+        <ValueRow
+          label="Keyboard layout"
+          width="fixed"
+          description={
+            fieldErrors.keyboard_layout ??
+            "XKB layout name (e.g. us, be, de, fr, gb). Empty uses the default."
+          }
+          value={settings.keyboard_layout}
+          onCommit={(raw) => {
+            const v = String(raw).trim().toLowerCase();
+            void commit({ keyboard_layout: v });
+          }}
+        />
+
         <PanelSectionRow>
           <DropdownItem
             label="Activation"

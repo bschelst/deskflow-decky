@@ -209,6 +209,10 @@ def build_environment(
     else:
         raise LaunchError("unknown input backend: {0}".format(backend))
 
+    layout = settings.get("keyboard_layout", "")
+    if layout:
+        env["XKB_DEFAULT_LAYOUT"] = _clean("keyboard layout", layout)
+
     return {key: str(value) for key, value in env.items() if value != ""}
 
 

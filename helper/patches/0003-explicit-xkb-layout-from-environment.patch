@@ -1,0 +1,103 @@
+From 3da1667d2a023b826ea4fafcd94be76d6899ad12 Mon Sep 17 00:00:00 2001
+From: Bart Schelstraete <bart@schelstraete.org>
+Date: Sat, 22 Aug 2026 03:58:21 +0200
+Subject: [PATCH] fix: load XKB layout from environment for headless clients
+
+When running under QT_QPA_PLATFORM=offscreen (as in a flatpak sandbox),
+two things break:
+
+1. DeskflowXkbKeyboard cannot open an X11 display to read the keyboard
+   layout, so it defaults to "us". This means the language advertised
+   to the server is wrong when the actual layout differs, causing the
+   server to translate keys incorrectly.
+
+2. EiKeyState::initDefaultKeymap() calls xkb_keymap_new_from_names with
+   nullptr, which should read XKB_DEFAULT_LAYOUT from the environment
+   but silently fails in some sandbox configurations.
+
+Fix both by reading XKB_DEFAULT_LAYOUT (and the other XKB_DEFAULT_*
+variables) explicitly from the environment. The language detection now
+advertises the correct layout to the server, and the keymap is compiled
+with the right layout for key translation.
+
+When no environment variables are set the behaviour is unchanged.
+---
+ src/lib/deskflow/unix/DeskflowXkbKeyboard.cpp | 13 ++++++++++-
+ src/lib/platform/EiKeyState.cpp               | 23 ++++++++++++++++++-
+ 2 files changed, 34 insertions(+), 2 deletions(-)
+
+diff --git a/src/lib/deskflow/unix/DeskflowXkbKeyboard.cpp b/src/lib/deskflow/unix/DeskflowXkbKeyboard.cpp
+index b04af71..1783447 100644
+--- a/src/lib/deskflow/unix/DeskflowXkbKeyboard.cpp
++++ b/src/lib/deskflow/unix/DeskflowXkbKeyboard.cpp
+@@ -7,6 +7,8 @@
+ 
+ #if WINAPI_XWINDOWS
+ #include "base/Log.h"
++#include <cstdlib>
++#include <cstring>
+ #include <memory>
+ 
+ #include "DeskflowXkbKeyboard.h" // Include last due to X11 use
+@@ -23,7 +25,16 @@ DeskflowXkbKeyboard::DeskflowXkbKeyboard()
+       LOG_WARN("error reading keyboard layouts");
+     }
+   } else {
+-    LOG_WARN("can't open xkb display during reading languages");
++    const char *envLayout  = std::getenv("XKB_DEFAULT_LAYOUT");
++    const char *envVariant = std::getenv("XKB_DEFAULT_VARIANT");
++    if (envLayout && envLayout[0]) {
++      m_data.layout = strdup(envLayout);
++      if (envVariant && envVariant[0])
++        m_data.variant = strdup(envVariant);
++      LOG_INFO("xkb display unavailable; using XKB_DEFAULT_LAYOUT=%s", envLayout);
++    } else {
++      LOG_WARN("can't open xkb display and XKB_DEFAULT_LAYOUT is not set; defaulting to us");
++    }
+   }
+ }
+ 
+diff --git a/src/lib/platform/EiKeyState.cpp b/src/lib/platform/EiKeyState.cpp
+index 473ae66..8871797 100644
+--- a/src/lib/platform/EiKeyState.cpp
++++ b/src/lib/platform/EiKeyState.cpp
+@@ -14,6 +14,7 @@
+ #include "platform/XDGKeyUtil.h"
+ 
+ #include <cstddef>
++#include <cstdlib>
+ #include <memory>
+ #include <unistd.h>
+ 
+@@ -39,7 +40,27 @@ void EiKeyState::initDefaultKeymap()
+   if (m_xkbKeymap) {
+     xkb_keymap_unref(m_xkbKeymap);
+   }
+-  m_xkbKeymap = xkb_keymap_new_from_names(m_xkb, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
++  const char *rules   = std::getenv("XKB_DEFAULT_RULES");
++  const char *model   = std::getenv("XKB_DEFAULT_MODEL");
++  const char *layout  = std::getenv("XKB_DEFAULT_LAYOUT");
++  const char *variant = std::getenv("XKB_DEFAULT_VARIANT");
++  const char *options = std::getenv("XKB_DEFAULT_OPTIONS");
++
++  const bool hasOverride = rules || model || layout || variant || options;
++
++  struct xkb_rule_names names = {
++    .rules   = rules,
++    .model   = model,
++    .layout  = layout,
++    .variant = variant,
++    .options = options,
++  };
++
++  LOG_INFO("xkb default keymap: layout=%s variant=%s model=%s%s",
++           layout ? layout : "(default)", variant ? variant : "(none)",
++           model ? model : "(default)", hasOverride ? "" : " (no overrides)");
++
++  m_xkbKeymap = xkb_keymap_new_from_names(m_xkb, hasOverride ? &names : nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
+ 
+   if (m_xkbState) {
+     xkb_state_unref(m_xkbState);
+-- 
+2.53.0
+
