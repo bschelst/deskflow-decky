@@ -11,6 +11,7 @@
 import { callable } from "@decky/api";
 
 import {
+  isDesktopDeskflowStatus,
   isDiagnostics,
   isHelperInfo,
   isLogLines,
@@ -19,6 +20,7 @@ import {
   isSelfTest,
   isSettings,
   isStatus,
+  toDesktopDeskflowStatus,
   toHelperInfo,
   toStatus,
   transportError,
@@ -26,6 +28,7 @@ import {
   unwrapVoid,
 } from "./guards";
 import type {
+  DesktopDeskflowStatus,
   HelperInfo,
   PendingFingerprint,
   Result,
@@ -128,6 +131,24 @@ export const getHelperInfo = (): Promise<Result<HelperInfo>> =>
 
 export const installHelper = (): Promise<Result<HelperInfo>> =>
   guarded(rawInstallHelper, asHelperInfo);
+
+// -------------------------------------------------------------- desktop app sync
+
+const rawDesktopDeskflowStatus = callable<[], unknown>("get_desktop_deskflow_status");
+const rawSyncDesktopDeskflow = callable<[], unknown>("sync_desktop_deskflow");
+
+export const getDesktopDeskflowStatus = (): Promise<Result<DesktopDeskflowStatus>> =>
+  guarded(rawDesktopDeskflowStatus, (raw) => {
+    const result = unwrap(raw, isDesktopDeskflowStatus);
+    if (!result.ok) return result;
+    const status = toDesktopDeskflowStatus(result.data);
+    return status
+      ? { ok: true, data: status }
+      : { ok: false, error: transportError(TRANSPORT_MESSAGE) };
+  });
+
+export const syncDesktopDeskflow = (): Promise<Result<null>> =>
+  guarded(rawSyncDesktopDeskflow, unwrapVoid);
 
 // --------------------------------------------------------------------------- diagnostics
 

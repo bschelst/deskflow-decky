@@ -44,6 +44,8 @@ export const ERROR_CODES = [
   "fingerprint_pending",
   "timeout",
   "transport",
+  "desktop_app_running",
+  "desktop_app_not_found",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -120,4 +122,15 @@ export interface HelperInfo {
   version: string;
   /** The sandbox permissions the helper's manifest grants, for display in About. */
   permissions: string[];
+}
+
+/** Whether the stock Deskflow desktop app (a separate flatpak) matches this Deck. */
+export interface DesktopDeskflowStatus {
+  /** False also covers "installed but never run" -- it has no config yet either way. */
+  present: boolean;
+  /** Syncing while it holds an open config handle would be undone when it exits. */
+  running: boolean;
+  inSync: boolean;
+  remoteHost: string | null;
+  computerName: string | null;
 }

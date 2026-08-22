@@ -8,8 +8,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  isDesktopDeskflowStatus,
   isSettings,
   isStatus,
+  toDesktopDeskflowStatus,
   unwrap,
   unwrapVoid,
 } from "../../src/api/guards";
@@ -190,5 +192,55 @@ describe("isSettings", () => {
 
   it.each([null, undefined, [], "x", 0])("rejects a non-object (%s)", (bad) => {
     expect(isSettings(bad)).toBe(false);
+  });
+});
+
+describe("isDesktopDeskflowStatus / toDesktopDeskflowStatus", () => {
+  const present = {
+    present: true,
+    running: false,
+    in_sync: false,
+    remote_host: "desktop.local",
+    computer_name: "steamdeck2",
+  };
+
+  const absent = {
+    present: false,
+    running: false,
+    in_sync: false,
+    remote_host: null,
+    computer_name: null,
+  };
+
+  it("accepts the present case", () => {
+    expect(isDesktopDeskflowStatus(present)).toBe(true);
+  });
+
+  it("accepts the absent case, where the string fields are null", () => {
+    expect(isDesktopDeskflowStatus(absent)).toBe(true);
+  });
+
+  it.each(["present", "running", "in_sync"])("rejects a non-boolean %s", (field) => {
+    expect(isDesktopDeskflowStatus({ ...present, [field]: "yes" })).toBe(false);
+  });
+
+  it("converts snake_case to the camelCase the UI uses", () => {
+    expect(toDesktopDeskflowStatus(present)).toEqual({
+      present: true,
+      running: false,
+      inSync: false,
+      remoteHost: "desktop.local",
+      computerName: "steamdeck2",
+    });
+  });
+
+  it("maps a non-string remote_host/computer_name to null rather than passing it through", () => {
+    expect(toDesktopDeskflowStatus({ ...present, remote_host: 42 })).toEqual(
+      expect.objectContaining({ remoteHost: null }),
+    );
+  });
+
+  it("returns null for a malformed payload", () => {
+    expect(toDesktopDeskflowStatus({ present: true })).toBeNull();
   });
 });

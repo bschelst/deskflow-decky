@@ -15,6 +15,7 @@ import {
   LOG_LEVELS,
   MODES,
   type BackendError,
+  type DesktopDeskflowStatus,
   type ErrorCode,
   type HelperInfo,
   type PendingFingerprint,
@@ -220,6 +221,31 @@ export function toHelperInfo(raw: unknown): HelperInfo | null {
     reference: isString(raw.reference) ? raw.reference : "",
     version: isString(raw.version) ? raw.version : "",
     permissions: Array.isArray(raw.permissions) ? raw.permissions.filter(isString) : [],
+  };
+}
+
+interface RawDesktopDeskflowStatus {
+  present: boolean;
+  running: boolean;
+  in_sync: boolean;
+  remote_host: unknown;
+  computer_name: unknown;
+}
+
+export function isDesktopDeskflowStatus(value: unknown): value is RawDesktopDeskflowStatus {
+  return (
+    isObject(value) && isBool(value.present) && isBool(value.running) && isBool(value.in_sync)
+  );
+}
+
+export function toDesktopDeskflowStatus(raw: unknown): DesktopDeskflowStatus | null {
+  if (!isDesktopDeskflowStatus(raw)) return null;
+  return {
+    present: raw.present,
+    running: raw.running,
+    inSync: raw.in_sync,
+    remoteHost: isString(raw.remote_host) ? raw.remote_host : null,
+    computerName: isString(raw.computer_name) ? raw.computer_name : null,
   };
 }
 

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState, type FC } from "react";
 import {
   exportDiagnostics,
   forgetFingerprint,
+  getDesktopDeskflowStatus,
   getHelperInfo,
   getSettings,
   installHelper,
@@ -21,8 +22,9 @@ import {
   runSelfTest,
   setSettings,
   stopHelper,
+  syncDesktopDeskflow,
 } from "../api/backend";
-import type { HelperInfo, SelfTestResult, Settings } from "../api/types";
+import type { DesktopDeskflowStatus, HelperInfo, SelfTestResult, Settings } from "../api/types";
 import { ACTIVATION_MODES, INPUT_BACKENDS, LOG_LEVELS, MODES } from "../api/types";
 import { LogsModal } from "../components/LogsModal";
 import { ValueRow } from "../components/ValueRow";
@@ -85,6 +87,7 @@ export const SettingsPage: FC = () => {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [helper, setHelper] = useState<HelperInfo | null>(null);
   const [selfTest, setSelfTest] = useState<SelfTestResult | null>(null);
+  const [desktopDeskflow, setDesktopDeskflow] = useState<DesktopDeskflowStatus | null>(null);
   // The layout gamescope is actually running with: the value present when this page
   // loaded. Only a divergence from it makes the restart button meaningful.
   const [sessionLayout, setSessionLayout] = useState<string | null>(null);
@@ -109,6 +112,11 @@ export const SettingsPage: FC = () => {
   const NoticeFor: FC<{ where: NoticeWhere }> = ({ where }) =>
     notice && notice.where === where ? <Note>{notice.text}</Note> : null;
 
+  const refreshDesktopDeskflow = useCallback(async () => {
+    const result = await getDesktopDeskflowStatus();
+    if (result.ok) setDesktopDeskflow(result.data);
+  }, []);
+
   useEffect(() => {
     void (async () => {
       const result = await getSettings();
@@ -121,8 +129,10 @@ export const SettingsPage: FC = () => {
 
       const info = await getHelperInfo();
       if (info.ok) setHelper(info.data);
+
+      void refreshDesktopDeskflow();
     })();
-  }, []);
+  }, [refreshDesktopDeskflow]);
 
   /**
    * Frontend validation is for immediate feedback only. The backend re-validates and
@@ -229,6 +239,49 @@ export const SettingsPage: FC = () => {
           value={settings.client_name}
           onCommit={(value) => void commit({ client_name: value.trim() })}
         />
+
+        {desktopDeskflow?.present && !desktopDeskflow.inSync ? (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              disabled={busy || desktopDeskflow.running}
+              description={
+                desktopDeskflow.running
+                  ? "Close the Deskflow desktop app first -- it would overwrite this on exit."
+                  : "The Deskflow desktop app (Desktop Mode) has a different server address " +
+                    "and screen name. Copy this Deck's values into it, so switching to " +
+                    "Desktop Mode reconnects under the same screen instead of a second one."
+              }
+              onClick={() => {
+                showModal(
+                  <ConfirmModal
+                    strTitle="Sync desktop Deskflow?"
+                    strDescription={
+                      `This sets the desktop app's server address to "${settings.server_host}" ` +
+                      `and its screen name to "${settings.client_name}", overwriting what is ` +
+                      "there now. Nothing else in its settings is touched."
+                    }
+                    strOKButtonText="Sync"
+                    onOK={() => {
+                      void act(async () => {
+                        const result = await syncDesktopDeskflow();
+                        say(
+                          "connection",
+                          result.ok
+                            ? "Synced into the desktop Deskflow app."
+                            : result.error.message,
+                        );
+                        await refreshDesktopDeskflow();
+                      });
+                    }}
+                  />,
+                );
+              }}
+            >
+              Sync into desktop Deskflow
+            </ButtonItem>
+          </PanelSectionRow>
+        ) : null}
 
         <NoticeFor where="connection" />
       </PanelSection>

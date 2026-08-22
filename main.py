@@ -13,6 +13,13 @@ import signal
 from asyncio import create_subprocess_exec as spawn_process  # argv list only, no shell
 
 from deskflow_config import write_config
+from desktop_deskflow import (
+    SyncError,
+    desktop_config_path,
+    is_desktop_app_running,
+    read_desktop_identity,
+    sync_desktop_identity,
+)
 from diagnostics import build_report, redact_line
 from discovery import discover_socket
 from envelope import err, ok, safe, set_logger
@@ -67,6 +74,9 @@ CONFIG_PATH = os.path.join(HELPER_CONFIG_DIR, "Deskflow.conf")
 TLS_DIR = os.path.join(HELPER_CONFIG_DIR, "tls")
 CERT_PATH = os.path.join(TLS_DIR, "deskflow.pem")
 TRUSTED_SERVERS_PATH = os.path.join(TLS_DIR, "trusted-servers")
+
+#: The stock Deskflow desktop app's own config, a completely separate flatpak install.
+DESKTOP_DESKFLOW_CONFIG_PATH = desktop_config_path(decky.HOME)
 
 # Plugin-owned state the helper never reads stays in Decky's own directories.
 PINNED_HOSTS_PATH = os.path.join(SETTINGS_DIR, "pinned-hosts.json")
@@ -883,6 +893,71 @@ class Plugin:
             self._trust.remove(known)
             self._pins.unpin(host)
         return ok({"trusted": False})
+
+    # ------------------------------------------------------- stock desktop app sync
+
+    @safe
+    async def get_desktop_deskflow_status(self):
+        identity = await self._loop.run_in_executor(
+            None, read_desktop_identity, DESKTOP_DESKFLOW_CONFIG_PATH
+        )
+        running = await self._loop.run_in_executor(None, is_desktop_app_running)
+
+        if identity is None:
+            return ok(
+                {
+                    "present": False,
+                    "running": running,
+                    "in_sync": False,
+                    "remote_host": None,
+                    "computer_name": None,
+                }
+            )
+
+        in_sync = (
+            identity["remote_host"] == self._settings.get("server_host")
+            and identity["computer_name"] == self._settings.get("client_name")
+        )
+        return ok(
+            {
+                "present": True,
+                "running": running,
+                "in_sync": in_sync,
+                "remote_host": identity["remote_host"],
+                "computer_name": identity["computer_name"],
+            }
+        )
+
+    @safe
+    async def sync_desktop_deskflow(self):
+        """Copy this Deck's server address and screen name into the desktop app.
+
+        Only those two: TLS trust is per-client TOFU (tls.py), so the desktop app
+        keeping its own certificate is correct, not something to overwrite.
+        """
+        running = await self._loop.run_in_executor(None, is_desktop_app_running)
+        if running:
+            return err(
+                "desktop_app_running",
+                "Close the Deskflow desktop app first -- it would overwrite this on exit.",
+            )
+
+        try:
+            await self._loop.run_in_executor(
+                None,
+                sync_desktop_identity,
+                DESKTOP_DESKFLOW_CONFIG_PATH,
+                self._settings.get("server_host"),
+                self._settings.get("client_name"),
+            )
+        except SyncError as exc:
+            return err("desktop_app_not_found", str(exc))
+
+        decky.logger.info(
+            "Synced this Deck's identity into the desktop Deskflow app (%s)",
+            DESKTOP_DESKFLOW_CONFIG_PATH,
+        )
+        return ok({"path": DESKTOP_DESKFLOW_CONFIG_PATH})
 
     # ----------------------------------------------------------------- helper install
 

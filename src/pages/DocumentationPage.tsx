@@ -66,6 +66,16 @@ const TROUBLESHOOTING: Array<{ code: ErrorCode; meaning: string; fix: string }> 
     fix: "Install it from the Settings page, or run packaging/install-helper.sh in Desktop Mode.",
   },
   {
+    code: "desktop_app_running",
+    meaning: "The stock Deskflow desktop app is currently running.",
+    fix: "Close it first. It flushes its own settings back to disk on exit, which would overwrite the sync.",
+  },
+  {
+    code: "desktop_app_not_found",
+    meaning: "The stock Deskflow desktop app is not installed, or has not been run yet.",
+    fix: "Install org.deskflow.deskflow and open it once in Desktop Mode so it writes its own config, then try again.",
+  },
+  {
     code: "tls_setup_failed",
     meaning: "The certificate could not be generated.",
     fix: "Check that openssl is available. Deskflow's own engine cannot create this file, so the plugin does it.",

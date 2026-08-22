@@ -30,6 +30,8 @@ ERROR_CODES = frozenset(
         "tls_setup_failed",  # certificate generation or trust store write failed
         "fingerprint_pending",  # blocked awaiting the user's trust decision
         "timeout",  # an operation exceeded its deadline
+        "desktop_app_running",  # the stock desktop app must be closed first
+        "desktop_app_not_found",  # the stock desktop app is not installed or has no config yet
     }
 )
 
