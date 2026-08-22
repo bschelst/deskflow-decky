@@ -124,9 +124,13 @@ export const QuickAccessPanel: FC = () => {
         <PanelSectionRow>
           <ToggleField
             label="Input enabled"
-            description="Stop delivering input without disconnecting."
+            description={
+              "Same as the helper toggle above: deskflow-core has no way to pause " +
+              "input delivery without dropping the connection, so this starts and " +
+              "stops it too."
+            }
             checked={status.inputEnabled}
-            disabled={busy || !isRunning(status)}
+            disabled={busy}
             onChange={(next) => {
               setNote(null);
               void perform(() => (next ? enableInput() : disableInput()));

@@ -205,7 +205,6 @@ class Plugin:
         self._trust = TrustStore(TRUSTED_SERVERS_PATH)
         self._pins = PinnedHosts(PINNED_HOSTS_PATH)
         self._supervisor = None
-        self._input_enabled = True
         self._resolved_backend = None
         self._pending_fingerprint = None
         self._last_discovery = None
@@ -337,7 +336,11 @@ class Plugin:
                 "server": self._settings.get("server_host"),
                 "server_port": self._settings.get("server_port"),
                 "client_name": self._settings.get("client_name"),
-                "input_enabled": self._input_enabled,
+                # There is no way to pause injection without dropping the connection
+                # -- deskflow-core has no such control channel -- so this now just
+                # mirrors whether the helper is running rather than tracking a
+                # separate flag nothing ever enforced.
+                "input_enabled": self._helper.running,
                 "fingerprint_pending": self._pending_fingerprint is not None,
                 "gaming_mode": _is_gaming_mode(),
             }
@@ -896,16 +899,20 @@ class Plugin:
 
     @safe
     async def enable_input(self):
-        if not self._helper.running:
-            return err("not_running", "The helper is not running.")
-        self._input_enabled = True
-        return ok({"input_enabled": True})
+        """Alias for start_helper.
+
+        There used to be a separate _input_enabled flag here, toggled independently of
+        the helper -- but nothing downstream ever read it: deskflow-core has no control
+        channel that could pause injection without dropping the connection. Aliasing to
+        start/stop is less than the original "pause without disconnecting" promise, but
+        it is honest about what is actually possible today.
+        """
+        return await self._start()
 
     @safe
     async def disable_input(self):
-        # The panic switch: stop delivering input without tearing the connection down.
-        self._input_enabled = False
-        return ok({"input_enabled": False})
+        """Alias for stop_helper. See enable_input for why."""
+        return await self._stop()
 
     # ----------------------------------------------------------------- trust
 
