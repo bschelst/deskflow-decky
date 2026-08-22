@@ -115,7 +115,6 @@ def test_environment_is_explicit_not_inherited():
             "DESKFLOW_EI_BACKEND",
             "DESKFLOW_SCREEN_SIZE",
             "DISPLAY",
-            "WAYLAND_DISPLAY",
         }
     )
 
@@ -347,22 +346,3 @@ def test_missing_proc_is_not_an_error():
 def test_unreadable_cmdline_is_skipped(tmp_path):
     (tmp_path / "202").mkdir()  # no cmdline file at all
     assert find_stray_helpers(proc_root=str(tmp_path), own_pid=1) == []
-
-
-# --------------------------------------------------------------------------- clipboard
-
-
-def test_wayland_display_is_only_passed_when_clipboard_is_on():
-    off = build_environment(settings(), "gamescope-libei", found(), wayland_display="gamescope-0")
-    assert "WAYLAND_DISPLAY" not in off
-
-    on = build_environment(
-        settings(clipboard_enabled=True), "gamescope-libei", found(),
-        wayland_display="gamescope-0",
-    )
-    assert on["WAYLAND_DISPLAY"] == "gamescope-0"
-
-
-def test_clipboard_without_a_display_does_not_invent_one():
-    env = build_environment(settings(clipboard_enabled=True), "gamescope-libei", found())
-    assert "WAYLAND_DISPLAY" not in env

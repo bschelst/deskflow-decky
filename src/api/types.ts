@@ -82,7 +82,6 @@ export interface Settings {
   autostart_gaming_mode: boolean;
   reconnect_enabled: boolean;
   notifications_enabled: boolean;
-  clipboard_enabled: boolean;
   reconnect_max_backoff_s: number;
   pointer_sensitivity: number;
   screen_width: number;

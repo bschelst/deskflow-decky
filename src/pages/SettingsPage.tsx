@@ -325,19 +325,6 @@ export const SettingsPage: FC = () => {
         />
 
         <PanelSectionRow>
-          <ToggleField
-            label="Share clipboard"
-            description={
-              "Copy and paste text between this Deck and the server. Only works in " +
-              "Desktop Mode: Gamescope does not implement the protocol the clipboard " +
-              "tools need, so in Gaming Mode this has no effect."
-            }
-            checked={settings.clipboard_enabled}
-            onChange={(checked) => void commit({ clipboard_enabled: checked })}
-          />
-        </PanelSectionRow>
-
-        <PanelSectionRow>
           <DropdownItem
             label="Activation"
             description="Manual means input is delivered only while you enable it."

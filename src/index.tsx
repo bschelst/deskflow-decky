@@ -1,10 +1,11 @@
 import { addEventListener, definePlugin, removeEventListener, routerHook, toaster } from "@decky/api";
-import { ErrorBoundary, staticClasses } from "@decky/ui";
+import { ErrorBoundary, Navigation, staticClasses } from "@decky/ui";
 import { FaKeyboard } from "react-icons/fa";
 
 import { QuickAccessPanel } from "./components/QuickAccessPanel";
 import { DeskflowPage } from "./pages/DeskflowPage";
 import { PLUGIN_ROUTE } from "./routes";
+import LOGO_DATA_URL from "./assets/logo";
 
 interface Notification {
   title: string;
@@ -17,15 +18,39 @@ const isNotification = (value: unknown): value is Notification =>
   typeof (value as Notification).title === "string" &&
   typeof (value as Notification).body === "string";
 
+const notificationLogo = (
+  <img
+    src={LOGO_DATA_URL}
+    alt=""
+    style={{
+      width: "44px",
+      height: "44px",
+      flex: "0 0 44px",
+      objectFit: "contain",
+      display: "block",
+      marginRight: "8px",
+    }}
+  />
+);
+
 export default definePlugin(() => {
   routerHook.addRoute(PLUGIN_ROUTE, DeskflowPage, { exact: false });
 
-  // Registered at plugin level rather than in the panel: a dropped connection matters
-  // most precisely when the Quick Access Menu is closed and you are in a game.
-  // The backend sends one of these per outage, not one per reconnect attempt.
+  toaster.toast({
+    title: "Deskflow Decky started",
+    body: "The plugin was loaded by Decky.",
+    logo: notificationLogo,
+    onClick: () => Navigation.Navigate(PLUGIN_ROUTE),
+  });
+
   const onNotify = (payload: unknown) => {
     if (!isNotification(payload)) return;
-    toaster.toast({ title: payload.title, body: payload.body });
+    toaster.toast({
+      title: payload.title,
+      body: payload.body,
+      logo: notificationLogo,
+      onClick: () => Navigation.Navigate(PLUGIN_ROUTE),
+    });
   };
   addEventListener<[unknown]>("deskflow_notify", onNotify);
 

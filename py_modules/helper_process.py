@@ -163,7 +163,7 @@ def resolve_backend(requested, discovery, display=None):
 
 
 def build_environment(
-    settings, backend, discovery, display=None, home=None, screen_size=None, wayland_display=None
+    settings, backend, discovery, display=None, home=None, screen_size=None
 ):
     """The complete environment for the helper, built from nothing.
 
@@ -209,23 +209,16 @@ def build_environment(
     else:
         raise LaunchError("unknown input backend: {0}".format(backend))
 
-    if settings.get("clipboard_enabled") and wayland_display:
-        # wl-copy/wl-paste connect to the compositor themselves, independently of the
-        # Qt platform, so they need the display even when Qt runs offscreen.
-        env["WAYLAND_DISPLAY"] = _clean("wayland display", wayland_display)
-
     return {key: str(value) for key, value in env.items() if value != ""}
 
 
 def build_command(
     settings, config_path, backend, discovery, display=None, app_id=APP_ID, screen_size=None,
-    wayland_display=None,
 ):
     """Build the flatpak invocation as an argument list."""
     subcommand = "server" if settings["mode"] == "server" else "client"
     env = build_environment(
         settings, backend, discovery, display=display, screen_size=screen_size,
-        wayland_display=wayland_display,
     )
 
     argv = ["flatpak", "run", "--user", "--command={0}".format(HELPER_COMMAND)]
