@@ -35,7 +35,8 @@
 
 **Deskflow Decky** tries to make this possible by creating purpose-built Deskflow helper and a Decky front end that handles configuration, process lifecycle, diagnostics, and input activation from the Quick Access Menu.
 
-NOTE: The logo was made with AI. I can't make images, so feel free to send a pull request with new logo if you really want to change that.
+NOTE 1: The logo was made with AI. I can't make images, so feel free to send a pull request with new logo if you really want to change that.
+NOTE 2: Only SteamOS is supported.
 
 ## 📦 Installation
 
