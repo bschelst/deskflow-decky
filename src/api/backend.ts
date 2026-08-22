@@ -86,10 +86,7 @@ const rawStop = callable<[], unknown>("stop_helper");
 const rawRestart = callable<[], unknown>("restart_helper");
 const rawEnableInput = callable<[], unknown>("enable_input");
 const rawDisableInput = callable<[], unknown>("disable_input");
-const rawRebootDevice = callable<[], unknown>("reboot_device");
-
 export const startHelper = (): Promise<Result<null>> => guarded(rawStart, unwrapVoid);
-export const rebootDevice = (): Promise<Result<null>> => guarded(rawRebootDevice, unwrapVoid);
 export const stopHelper = (): Promise<Result<null>> => guarded(rawStop, unwrapVoid);
 export const restartHelper = (): Promise<Result<null>> => guarded(rawRestart, unwrapVoid);
 export const enableInput = (): Promise<Result<null>> => guarded(rawEnableInput, unwrapVoid);

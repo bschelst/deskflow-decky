@@ -797,18 +797,6 @@ class Plugin:
             return await self._start_locked()
 
     @safe
-    async def reboot_device(self):
-        """Reboot the device, offered by the UI after a keyboard layout change.
-
-        Gamescope reads the layout only at session start, so this is the shortest
-        path to applying it. The helper is stopped first for a clean shutdown.
-        """
-        decky.logger.info("Rebooting at the user's request to apply the keyboard layout.")
-        await self._stop()
-        await run_command(["systemctl", "reboot"])
-        return ok(None)
-
-    @safe
     async def enable_input(self):
         if not self._helper.running:
             return err("not_running", "The helper is not running.")

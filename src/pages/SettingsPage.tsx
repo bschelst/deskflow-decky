@@ -17,10 +17,10 @@ import {
   getHelperInfo,
   getSettings,
   installHelper,
-  rebootDevice,
   restartHelper,
   runSelfTest,
   setSettings,
+  stopHelper,
 } from "../api/backend";
 import type { HelperInfo, SelfTestResult, Settings } from "../api/types";
 import { ACTIVATION_MODES, INPUT_BACKENDS, LOG_LEVELS, MODES } from "../api/types";
@@ -29,6 +29,7 @@ import { ValueRow } from "../components/ValueRow";
 import { SelfTestRows } from "../components/SelfTestRows";
 import { useDeskflowStatus } from "../hooks/useDeskflowStatus";
 import { BACKEND_LABEL, MODE_LABEL } from "../lib/format";
+import { restartDevice } from "../lib/steam";
 import { validateField } from "../lib/validate";
 
 const backendOptions = INPUT_BACKENDS.map((value) => ({
@@ -364,8 +365,10 @@ export const SettingsPage: FC = () => {
                     strOKButtonText="Restart"
                     onOK={() => {
                       void act(async () => {
-                        const result = await rebootDevice();
-                        if (!result.ok) say("connection", result.error.message);
+                        // Stop the helper cleanly first; Steam handles the reboot
+                        // itself, which needs no privileges the backend lacks.
+                        await stopHelper();
+                        restartDevice();
                       });
                     }}
                   />,
