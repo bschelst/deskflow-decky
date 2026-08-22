@@ -254,10 +254,10 @@ class Plugin:
             self._loop.create_task(self._autostart_with_patience())
 
         # plugin_loader runs continuously across a Gaming <-> Desktop switch -- _main
-        # only ever runs once, at boot or plugin reload. Nothing else notices Gaming
-        # Mode coming back, so without this the helper stays stopped until the user
-        # restarts it by hand.
-        self._gaming_mode_watcher = self._loop.create_task(self._watch_for_gaming_mode_return())
+        # only ever runs once, at boot or plugin reload. Nothing else notices a mode
+        # change at all, so without this each side stays running (or stopped) past
+        # the point where that is still correct.
+        self._gaming_mode_watcher = self._loop.create_task(self._watch_gaming_mode_transitions())
 
         decky.logger.info("deskflow-decky backend ready.")
 
@@ -523,41 +523,49 @@ class Plugin:
                 "Autostart gave up: the Gamescope input socket never appeared."
             )
 
-    async def _watch_for_gaming_mode_return(self):
-        """Restart the helper when Gaming Mode comes back, whenever it isn't running.
+    async def _watch_gaming_mode_transitions(self):
+        """Keep the helper and the desktop app each running only in their own mode.
 
         plugin_loader runs continuously across a mode switch, so nothing else ever
-        notices Gaming Mode returning -- without this, the helper stays down until the
-        user restarts it by hand every single time.
+        notices Gaming Mode changing at all -- without this, whichever side is still
+        "connected" when the switch happens just stays that way, orphaned.
 
-        Not gated on how it ended up not running. Originally this only resumed a stop
-        the eis-lost handler caused itself (_stopped_for_desktop_mode), on the theory
-        that a manual stop or the crash-loop failsafe should not be overridden. But
-        reproduced on hardware: restarting the plugin while in Desktop Mode runs the
-        boot-time autostart retry, which exhausts its budget and gives up into "error"
-        long before Gaming Mode ever returns -- a state that flag was never set for, so
-        the helper stayed down even though autostart_gaming_mode was still on. The
-        crash-loop failsafe already turns that setting off when it trips, so checking
-        it here still respects the failsafe; a manual stop staying off across a mode
-        cycle was never something autostart_gaming_mode promised in the first place.
+        Both directions are polled rather than purely reactive, because a reactive
+        check races Gamescope's own shutdown. Reproduced on hardware: the "ei:
+        Disconnected by EIS" log line _on_helper_line reacts to can arrive before
+        Gamescope's process has actually exited, so a single point-in-time check
+        made right at that log line can still read "still gaming" and never stop the
+        helper -- which is exactly what let it sit connected-but-orphaned, fighting
+        the desktop app over the same screen name, until this poll caught up to it.
 
-        Also stops the desktop Deskflow app first, unconditionally, on every return
-        to Gaming Mode: reproduced on hardware twice in one session, if it is still
-        running (autostarted in Desktop Mode) it holds the same screen name and the
-        server rejects our reconnect with "already has a connected client" for
-        roughly 15 seconds after -- long after the process itself is gone. Doing this
-        before attempting our own reconnect avoids that race outright.
+        - Leaving Gaming Mode: if the helper is still running, stop it. The eis-lost
+          handler in _on_helper_line remains the fast path for the common case; this
+          is the guaranteed backstop for when that race loses.
+        - Returning to Gaming Mode: stop the desktop app first (reproduced on
+          hardware twice: left running from Desktop Mode, it holds the same screen
+          name and the server rejects our reconnect with "already has a connected
+          client" for roughly 15 seconds after the process itself is gone), then
+          restart the helper if autostart_gaming_mode is on. Not gated on how the
+          helper ended up not running -- the crash-loop failsafe already turns that
+          setting off when it trips, so checking it here still respects the
+          failsafe.
         """
         was_gaming = _is_gaming_mode()
         try:
             while True:
                 await asyncio.sleep(GAMING_MODE_POLL_INTERVAL_S)
                 now_gaming = _is_gaming_mode()
+
+                if was_gaming and not now_gaming and self._helper.running:
+                    decky.logger.info("Gaming Mode ended; stopping the helper.")
+                    self._loop.create_task(self._stop())
+
                 if now_gaming and not was_gaming:
                     await self._stop_desktop_app_if_running()
                     if self._settings.get("autostart_gaming_mode") and not self._helper.running:
                         decky.logger.info("Gaming Mode returned; restarting the helper.")
                         self._loop.create_task(self._autostart_with_patience())
+
                 was_gaming = now_gaming
         except asyncio.CancelledError:
             raise
