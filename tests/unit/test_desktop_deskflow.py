@@ -15,6 +15,7 @@ from desktop_deskflow import (
     bootstrap_client_config,
     desktop_client_config_needs_bootstrap,
     desktop_config_path,
+    find_desktop_app_pids,
     find_exported_desktop_file,
     is_desktop_app_running,
     read_desktop_identity,
@@ -158,30 +159,58 @@ def test_sync_returns_the_path(tmp_path):
 
 
 # --------------------------------------------------------------- is the app running
+#
+# Not a cmdline match -- confirmed on hardware (2026-08-22) that inside the sandbox
+# the app id never appears in argv at all (bwrap re-execs with its own argv: real
+# observed processes are just "bwrap ... -- deskflow" and "deskflow-core client").
+# What every sandboxed process DOES carry is FLATPAK_ID in its own environment.
 
 
-def make_proc(tmp_path, pid, cmdline):
+def make_proc(tmp_path, pid, cmdline, flatpak_id=None):
     d = tmp_path / str(pid)
     d.mkdir()
     (d / "cmdline").write_bytes(cmdline.encode())
+    environ = f"FLATPAK_ID={flatpak_id}\x00" if flatpak_id else ""
+    (d / "environ").write_bytes(environ.encode())
 
 
 def test_detects_the_desktop_app_running(tmp_path):
-    make_proc(tmp_path, 501, "flatpak\x00run\x00org.deskflow.deskflow\x00")
+    make_proc(tmp_path, 501, "bwrap\x00--args\x0069\x00--\x00deskflow", "org.deskflow.deskflow")
     assert is_desktop_app_running(proc_root=str(tmp_path)) is True
 
 
 def test_does_not_confuse_our_own_helper_with_the_desktop_app(tmp_path):
-    make_proc(tmp_path, 501, "deskflow-core\x00client\x00org.schelstraete.DeskFlowDecky")
+    make_proc(
+        tmp_path, 501,
+        "deskflow-core\x00client",
+        "org.schelstraete.DeskFlowDecky",
+    )
     assert is_desktop_app_running(proc_root=str(tmp_path)) is False
+
+
+def test_ignores_the_unsandboxed_launcher_that_already_exec_d_away(tmp_path):
+    # The one process that DOES have the app id in its cmdline -- but no FLATPAK_ID,
+    # because it is outside the sandbox. Must not be treated as a live app instance.
+    make_proc(tmp_path, 500, "flatpak\x00run\x00org.deskflow.deskflow\x00")
+    assert is_desktop_app_running(proc_root=str(tmp_path)) is False
+
+
+def test_finds_every_matching_pid_not_just_the_first(tmp_path):
+    # bwrap wrapper, its child, and the sandboxed deskflow-core -- exactly the shape
+    # observed on hardware (2026-08-22): killing only the first found leaves the
+    # others running and the server-side name held.
+    make_proc(tmp_path, 501, "bwrap\x00--args\x0069\x00--\x00deskflow", "org.deskflow.deskflow")
+    make_proc(tmp_path, 502, "/app/bin/deskflow-core\x00client", "org.deskflow.deskflow")
+    make_proc(tmp_path, 503, "firefox\x00")
+    assert sorted(find_desktop_app_pids(proc_root=str(tmp_path))) == [501, 502]
 
 
 def test_missing_proc_is_not_an_error():
     assert is_desktop_app_running(proc_root="/nonexistent-proc") is False
 
 
-def test_unreadable_cmdline_is_skipped(tmp_path):
-    (tmp_path / "202").mkdir()  # no cmdline file at all
+def test_unreadable_environ_is_skipped(tmp_path):
+    (tmp_path / "202").mkdir()  # no environ file at all
     assert is_desktop_app_running(proc_root=str(tmp_path)) is False
 
 

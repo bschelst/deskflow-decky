@@ -19,6 +19,7 @@ from desktop_deskflow import (
     bootstrap_client_config,
     desktop_client_config_needs_bootstrap,
     desktop_config_path,
+    find_desktop_app_pids,
     is_desktop_app_running,
     read_desktop_identity,
     sync_desktop_identity,
@@ -532,25 +533,33 @@ class Plugin:
         notices Gaming Mode returning -- without this, the eis-lost stop earlier
         leaves the helper down until the user restarts it by hand every single time.
 
-        Only resumes a stop this exact code path caused (_stopped_for_desktop_mode).
-        A manual stop or the crash-loop failsafe are the user's or the failsafe's
-        decision to respect, not something to override the moment Gamescope reappears.
+        Also stops the desktop Deskflow app first, unconditionally, on every return
+        to Gaming Mode: reproduced on hardware twice in one session, if it is still
+        running (autostarted in Desktop Mode) it holds the same screen name and the
+        server rejects our reconnect with "already has a connected client" for
+        roughly 15 seconds after -- long after the process itself is gone. Doing this
+        before attempting our own reconnect avoids that race outright.
+
+        The helper restart itself only resumes a stop this exact code path caused
+        (_stopped_for_desktop_mode). A manual stop or the crash-loop failsafe are the
+        user's or the failsafe's decision to respect, not something to override the
+        moment Gamescope reappears.
         """
         was_gaming = _is_gaming_mode()
         try:
             while True:
                 await asyncio.sleep(GAMING_MODE_POLL_INTERVAL_S)
                 now_gaming = _is_gaming_mode()
-                if (
-                    now_gaming
-                    and not was_gaming
-                    and self._stopped_for_desktop_mode
-                    and self._settings.get("autostart_gaming_mode")
-                    and not self._helper.running
-                ):
-                    self._stopped_for_desktop_mode = False
-                    decky.logger.info("Gaming Mode returned; restarting the helper.")
-                    self._loop.create_task(self._autostart_with_patience())
+                if now_gaming and not was_gaming:
+                    await self._stop_desktop_app_if_running()
+                    if (
+                        self._stopped_for_desktop_mode
+                        and self._settings.get("autostart_gaming_mode")
+                        and not self._helper.running
+                    ):
+                        self._stopped_for_desktop_mode = False
+                        decky.logger.info("Gaming Mode returned; restarting the helper.")
+                        self._loop.create_task(self._autostart_with_patience())
                 was_gaming = now_gaming
         except asyncio.CancelledError:
             raise
@@ -755,6 +764,46 @@ class Plugin:
                 except ProcessLookupError:
                     break
             decky.logger.warning("Cleared a stray helper process (pid %s)", pid)
+
+    async def _stop_desktop_app_if_running(self):
+        """Stop the stock desktop Deskflow app, if it has a live process.
+
+        Reproduced on hardware twice in one session (2026-08-22): if the desktop app
+        autostarted in Desktop Mode is still running when Gaming Mode comes back and
+        this plugin's helper reconnects under the same screen name, the server
+        rejects the newcomer with "already has a connected client" -- and killing the
+        process locally is not enough on its own, the server took roughly 15 seconds
+        to notice and release the name even after the process was gone. Doing this
+        proactively, before attempting our own reconnect, avoids the race entirely
+        rather than requiring the deskflow-core side to retry into a slowly-clearing
+        server-side registration.
+        """
+        pids = find_desktop_app_pids()
+        if not pids:
+            return
+
+        with contextlib.suppress(Exception):
+            await run_command(["flatpak", "kill", DESKTOP_APP_ID], timeout=15)
+
+        # Same instance-registry trap as our own helper: once the launching process
+        # dies, flatpak forgets the app while the sandboxed process is still there.
+        for pid in pids:
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.kill(pid, sig)
+                except (ProcessLookupError, PermissionError):
+                    break
+                await asyncio.sleep(1)
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    break
+            decky.logger.info(
+                "Stopped the desktop Deskflow app (pid %s) so it can't hold '%s' "
+                "while Gaming Mode reconnects.",
+                pid,
+                self._settings.get("client_name"),
+            )
 
     async def _stop_locked(self):
         supervisor = self._supervisor

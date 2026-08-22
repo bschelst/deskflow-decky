@@ -25,6 +25,7 @@ __all__ = [
     "bootstrap_client_config",
     "desktop_client_config_needs_bootstrap",
     "desktop_config_path",
+    "find_desktop_app_pids",
     "find_exported_desktop_file",
     "is_desktop_app_running",
     "read_desktop_identity",
@@ -77,28 +78,47 @@ def desktop_config_path(home):
     return os.path.join(home, ".var", "app", DESKTOP_APP_ID, "config", "Deskflow", "Deskflow.conf")
 
 
+def find_desktop_app_pids(app_id=DESKTOP_APP_ID, proc_root="/proc"):
+    """PIDs of every sandboxed process belonging to the desktop app.
+
+    Not a cmdline match. Confirmed on hardware (2026-08-22) that inside the sandbox
+    the app id never appears in argv at all -- bwrap re-execs with its own argv, so
+    the observed processes are just "bwrap ... -- deskflow" and "deskflow-core
+    client". The unsandboxed `flatpak run ... org.deskflow.deskflow` launcher does
+    carry it, but only briefly: flatpak typically execs itself away into bwrap before
+    anything gets a chance to see it.
+
+    What every sandboxed process DOES carry is FLATPAK_ID in its own environment, set
+    by the sandbox itself -- confirmed the same way, reading each candidate's real
+    /proc/<pid>/environ. That read needs root, which this plugin already runs as.
+    """
+    marker = f"FLATPAK_ID={app_id}".encode()
+    found = []
+    try:
+        entries = os.listdir(proc_root)
+    except OSError:
+        return found
+
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(os.path.join(proc_root, entry, "environ"), "rb") as handle:
+                environ = handle.read()
+        except OSError:
+            continue
+        if marker in environ.split(b"\x00"):
+            found.append(int(entry))
+    return found
+
+
 def is_desktop_app_running(app_id=DESKTOP_APP_ID, proc_root="/proc"):
     """Whether the desktop app has a live process.
 
     Writing to its config while it holds an open QSettings handle is a race: Qt flushes
     its in-memory copy back to disk on exit, which would silently undo the sync.
     """
-    try:
-        entries = os.listdir(proc_root)
-    except OSError:
-        return False
-
-    for entry in entries:
-        if not entry.isdigit():
-            continue
-        try:
-            with open(os.path.join(proc_root, entry, "cmdline"), "rb") as handle:
-                cmdline = handle.read().decode("utf-8", "replace")
-        except OSError:
-            continue
-        if app_id in cmdline:
-            return True
-    return False
+    return bool(find_desktop_app_pids(app_id, proc_root))
 
 
 def read_desktop_identity(path):
