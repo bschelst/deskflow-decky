@@ -24,6 +24,7 @@ import {
   setSettings,
   stopHelper,
   syncDesktopDeskflow,
+  syncFromDesktopDeskflow,
 } from "../api/backend";
 import type { DesktopDeskflowStatus, HelperInfo, SelfTestResult, Settings } from "../api/types";
 import { ACTIVATION_MODES, INPUT_BACKENDS, LOG_LEVELS, MODES } from "../api/types";
@@ -322,6 +323,48 @@ export const SettingsPage: FC = () => {
               }}
             >
               Sync into desktop Deskflow
+            </ButtonItem>
+          </PanelSectionRow>
+        ) : null}
+
+        {desktopDeskflow?.installed && desktopDeskflow.present && !desktopDeskflow.inSync ? (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              disabled={busy}
+              description={
+                "Or the other way around: pull the desktop app's server address and " +
+                "screen name into these settings instead, if that one is the one " +
+                "already set up correctly. Reading its config is safe even while it " +
+                "is running."
+              }
+              onClick={() => {
+                showModal(
+                  <ConfirmModal
+                    strTitle="Pull from desktop Deskflow?"
+                    strDescription={
+                      "This sets Server address and This machine's name above to whatever " +
+                      "the desktop app currently has, overwriting what is set here now."
+                    }
+                    strOKButtonText="Pull"
+                    onOK={() => {
+                      void act(async () => {
+                        const result = await syncFromDesktopDeskflow();
+                        if (result.ok) setLocal(result.data);
+                        say(
+                          "connection",
+                          result.ok
+                            ? "Pulled from the desktop Deskflow app."
+                            : result.error.message,
+                        );
+                        await refreshDesktopDeskflow();
+                      });
+                    }}
+                  />,
+                );
+              }}
+            >
+              Pull from desktop Deskflow
             </ButtonItem>
           </PanelSectionRow>
         ) : null}

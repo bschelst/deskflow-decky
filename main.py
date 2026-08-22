@@ -113,6 +113,11 @@ INSTALL_TIMEOUT_S = 180
 #: write its default config, short enough not to make "Install" feel stuck.
 BOOTSTRAP_LAUNCH_TIMEOUT_S = 6
 
+#: How often to poll for Gaming Mode returning. A cheap env-var read, not a subprocess
+#: call, so polling this often costs nothing worth avoiding; the point is noticing the
+#: return promptly, not saving cycles.
+GAMING_MODE_POLL_INTERVAL_S = 3
+
 #: Autostart retry schedule for the boot race: plugin_loader regularly comes up
 #: before gamescope has created its EIS socket, and a single attempt then parks the
 #: plugin in "error" until someone presses start. Retry while the socket is simply
@@ -219,6 +224,12 @@ class Plugin:
         # Guards against scheduling _stop() once per buffered line: deskflow-core can
         # log the eis-lost warning several times before the first stop task even runs.
         self._eis_lost_stop_scheduled = False
+        # True only while a stop was ours, for leaving Gaming Mode -- not a manual
+        # stop, not the crash-loop failsafe. Only this case should ever be resumed
+        # automatically; the other two are the user's or the failsafe's decision to
+        # respect, not override.
+        self._stopped_for_desktop_mode = False
+        self._gaming_mode_watcher = None
         self._watcher = FingerprintWatcher(
             on_fingerprint=self._on_peer_fingerprint, logger=decky.logger
         )
@@ -238,10 +249,18 @@ class Plugin:
             # As a task: _main must not block the loader for the whole retry schedule.
             self._loop.create_task(self._autostart_with_patience())
 
+        # plugin_loader runs continuously across a Gaming <-> Desktop switch -- _main
+        # only ever runs once, at boot or plugin reload. Nothing else notices Gaming
+        # Mode coming back, so without this the helper stays stopped until the user
+        # restarts it by hand.
+        self._gaming_mode_watcher = self._loop.create_task(self._watch_for_gaming_mode_return())
+
         decky.logger.info("deskflow-decky backend ready.")
 
     async def _unload(self):
         decky.logger.info("Unloading; stopping helper.")
+        if self._gaming_mode_watcher is not None:
+            self._gaming_mode_watcher.cancel()
         await self._stop()
 
     async def _uninstall(self):
@@ -496,9 +515,43 @@ class Plugin:
                 "Autostart gave up: the Gamescope input socket never appeared."
             )
 
+    async def _watch_for_gaming_mode_return(self):
+        """Restart the helper when Gaming Mode comes back, if we stopped it ourselves.
+
+        plugin_loader runs continuously across a mode switch, so nothing else ever
+        notices Gaming Mode returning -- without this, the eis-lost stop earlier
+        leaves the helper down until the user restarts it by hand every single time.
+
+        Only resumes a stop this exact code path caused (_stopped_for_desktop_mode).
+        A manual stop or the crash-loop failsafe are the user's or the failsafe's
+        decision to respect, not something to override the moment Gamescope reappears.
+        """
+        was_gaming = _is_gaming_mode()
+        try:
+            while True:
+                await asyncio.sleep(GAMING_MODE_POLL_INTERVAL_S)
+                now_gaming = _is_gaming_mode()
+                if (
+                    now_gaming
+                    and not was_gaming
+                    and self._stopped_for_desktop_mode
+                    and self._settings.get("autostart_gaming_mode")
+                    and not self._helper.running
+                ):
+                    self._stopped_for_desktop_mode = False
+                    decky.logger.info("Gaming Mode returned; restarting the helper.")
+                    self._loop.create_task(self._autostart_with_patience())
+                was_gaming = now_gaming
+        except asyncio.CancelledError:
+            raise
+
     async def _start_locked(self):
         if self._helper.running:
             return err("already_running", "The helper is already running.")
+
+        # A genuine new start, manual or automatic, always supersedes the reason the
+        # helper was last stopped.
+        self._stopped_for_desktop_mode = False
 
         settings = self._settings
 
@@ -638,6 +691,7 @@ class Plugin:
             and not self._eis_lost_stop_scheduled
         ):
             self._eis_lost_stop_scheduled = True
+            self._stopped_for_desktop_mode = True
             decky.logger.warning(
                 "Lost Gamescope's input socket outside Gaming Mode; stopping so '%s' "
                 "is not held open on the server for nothing.",
@@ -987,6 +1041,34 @@ class Plugin:
             DESKTOP_DESKFLOW_CONFIG_PATH,
         )
         return ok({"path": DESKTOP_DESKFLOW_CONFIG_PATH})
+
+    @safe
+    async def sync_from_desktop_deskflow(self):
+        """Pull the desktop app's server address and screen name into this plugin.
+
+        The reverse of sync_desktop_deskflow: useful when the desktop app was already
+        set up in Desktop Mode before this plugin was ever configured for Gaming Mode,
+        so the same server address and screen name do not have to be typed in twice.
+        """
+        identity = await self._loop.run_in_executor(
+            None, read_desktop_identity, DESKTOP_DESKFLOW_CONFIG_PATH
+        )
+        if identity is None:
+            return err(
+                "desktop_app_not_found",
+                "The desktop Deskflow app has no config to read yet -- open it once in "
+                "Desktop Mode first.",
+            )
+
+        result = await self.set_settings(
+            {"server_host": identity["remote_host"], "client_name": identity["computer_name"]}
+        )
+        if result["ok"]:
+            decky.logger.info(
+                "Pulled server address and screen name from the desktop Deskflow app (%s)",
+                DESKTOP_DESKFLOW_CONFIG_PATH,
+            )
+        return result
 
     @safe
     async def install_desktop_deskflow(self):

@@ -136,6 +136,7 @@ export const installHelper = (): Promise<Result<HelperInfo>> =>
 
 const rawDesktopDeskflowStatus = callable<[], unknown>("get_desktop_deskflow_status");
 const rawSyncDesktopDeskflow = callable<[], unknown>("sync_desktop_deskflow");
+const rawSyncFromDesktopDeskflow = callable<[], unknown>("sync_from_desktop_deskflow");
 const rawInstallDesktopDeskflow = callable<[], unknown>("install_desktop_deskflow");
 
 export const getDesktopDeskflowStatus = (): Promise<Result<DesktopDeskflowStatus>> =>
@@ -150,6 +151,9 @@ export const getDesktopDeskflowStatus = (): Promise<Result<DesktopDeskflowStatus
 
 export const syncDesktopDeskflow = (): Promise<Result<null>> =>
   guarded(rawSyncDesktopDeskflow, unwrapVoid);
+
+export const syncFromDesktopDeskflow = (): Promise<Result<Settings>> =>
+  guarded(rawSyncFromDesktopDeskflow, viaGuard(isSettings));
 
 export const installDesktopDeskflow = (): Promise<Result<null>> =>
   guarded(rawInstallDesktopDeskflow, unwrapVoid);
