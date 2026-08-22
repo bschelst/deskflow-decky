@@ -28,7 +28,7 @@ from helper_process import (
     resolve_backend,
 )
 from identity import derive_client_name
-from log_watch import FingerprintWatcher, classify_connection
+from log_watch import FingerprintWatcher, classify_connection, eis_disconnected
 from screen_size import choose_screen_size, detection_commands
 from session_env import sync_keyboard_layout
 from settings import SettingsManager  # provided by the loader
@@ -193,6 +193,9 @@ class Plugin:
         self._last_notify_at = 0.0
         # Distinguishes 'never worked' (bad config) from 'worked then dropped' (outage).
         self._had_healthy_connection = False
+        # Guards against scheduling _stop() once per buffered line: deskflow-core can
+        # log the eis-lost warning several times before the first stop task even runs.
+        self._eis_lost_stop_scheduled = False
         self._watcher = FingerprintWatcher(
             on_fingerprint=self._on_peer_fingerprint, logger=decky.logger
         )
@@ -517,6 +520,7 @@ class Plugin:
 
         self._resolved_backend = backend
         self._watcher.reset()
+        self._eis_lost_stop_scheduled = False
 
         try:
             await self._helper.start(argv, env, on_line=self._on_helper_line)
@@ -600,6 +604,23 @@ class Plugin:
             self._to_state("connected")
         elif event == "lost" and self._state.state in _HEALTHY_STATES:
             self._to_state("disconnected", reason="the server stopped responding")
+
+        # Gamescope's socket disappearing does not mean the server connection dropped
+        # -- deskflow-core just keeps retrying EIS forever on its own, silently holding
+        # the screen name open. If we are no longer in Gaming Mode, that reconnect can
+        # never succeed, so stop cleanly instead of squatting on the name.
+        if (
+            eis_disconnected(line)
+            and not _is_gaming_mode()
+            and not self._eis_lost_stop_scheduled
+        ):
+            self._eis_lost_stop_scheduled = True
+            decky.logger.warning(
+                "Lost Gamescope's input socket outside Gaming Mode; stopping so '%s' "
+                "is not held open on the server for nothing.",
+                self._settings.get("client_name"),
+            )
+            self._loop.create_task(self._stop())
 
     def _to_state(self, target, reason=None):
         """Transition, tolerating an illegal move rather than killing the caller.

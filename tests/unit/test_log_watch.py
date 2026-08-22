@@ -185,3 +185,39 @@ def test_connecting_is_not_mistaken_for_connected():
     # "connecting to" must not match "connected to server", or every retry would look
     # like a successful connection and the outage would never be reported.
     assert classify_connection("IPC: connecting to 'desktop': 10.0.0.1:24800") is None
+
+
+# ---------------------------------------------------------------- eis link, separately
+#
+# The exact line observed on hardware (2026-08-22): deskflow-core keeps its server
+# connection alive after this and just retries EIS on its own, so this must be watched
+# independently of classify_connection.
+
+from log_watch import eis_disconnected
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "WARNING: disconnected from eis, will afterwards commence attempt to reconnect",
+        "disconnected from eis",
+        "DISCONNECTED FROM EIS",
+    ],
+)
+def test_detects_eis_disconnected(line):
+    assert eis_disconnected(line) is True
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "",
+        "ei: Disconnected by EIS",  # a different, earlier line -- not the one we key on
+        "IPC: disconnected from server",
+        "libei reported no usable screen region; using fixed logical screen size",
+        None,
+        42,
+    ],
+)
+def test_eis_disconnected_ignores_everything_else(line):
+    assert eis_disconnected(line) is False

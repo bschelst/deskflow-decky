@@ -34,10 +34,6 @@ helper/flatpak/repo/
 # leaver scripts
 .lea*
 
-# testst
-tests/
-
-
 # Secrets and generated runtime state — never commit these
 *.pem
 *.key

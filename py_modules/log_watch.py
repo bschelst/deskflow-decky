@@ -15,7 +15,12 @@ changing a test alongside it.
 
 import re
 
-__all__ = ["FingerprintWatcher", "classify_connection", "extract_peer_fingerprint"]
+__all__ = [
+    "FingerprintWatcher",
+    "classify_connection",
+    "eis_disconnected",
+    "extract_peer_fingerprint",
+]
 
 SHA256_HEX_LENGTH = 64
 
@@ -42,6 +47,14 @@ _LOST_LINES = (
     re.compile(r"\bfailed to connect to server\b", re.IGNORECASE),
 )
 
+# The EIS (input-injection) link and the network link to the server are independent:
+# losing Gamescope's socket does not make deskflow-core drop the server connection, it
+# just logs this warning and keeps retrying EIS on its own (exact string from
+# EiScreen::handleDisconnect). Left unwatched, the plugin holds the screen name on the
+# server for as long as deskflow-core keeps its own connection open -- even after the
+# input backend it was injecting into is long gone.
+_EIS_LOST_LINE = re.compile(r"\bdisconnected from eis\b", re.IGNORECASE)
+
 
 def classify_connection(line):
     """'connected', 'lost', or None for a line of helper output."""
@@ -52,6 +65,13 @@ def classify_connection(line):
     if _CONNECTED_LINE.search(line):
         return "connected"
     return None
+
+
+def eis_disconnected(line):
+    """Whether this line reports deskflow-core losing its EIS (input-injection) link."""
+    if not isinstance(line, str) or not line:
+        return False
+    return bool(_EIS_LOST_LINE.search(line))
 
 
 def extract_peer_fingerprint(line):
