@@ -225,18 +225,27 @@ export const DocumentationPage: FC = () => (
 
     <PanelSection title="Keyboard layout">
       <Paragraph>
-        If the server's keyboard layout differs from the one this machine expects (for
-        example Belgian AZERTY on the server and US QWERTY here), keys may be swapped or
-        produce the wrong characters.
+        The keyboard layout setting must match the layout this machine uses — not the
+        server's layout. SteamOS defaults to US, so most users should leave it empty.
       </Paragraph>
       <Paragraph>
-        Set the Keyboard layout field on the Settings page to the XKB layout name the
-        helper should use: "be" for Belgian, "de" for German, "fr" for French, "gb" for
-        UK, "us" for US, and so on. Leave it empty to use the system default.
+        The Deskflow server sends characters, not physical key positions. The plugin
+        translates each character into the key combination that produces it on this
+        machine's layout. If this machine is US and the server sends "1", the plugin
+        presses the 1 key. If the server has a different layout (for example Belgian
+        AZERTY, where Shift+1 produces "1"), the plugin still receives the character
+        "1" and presses the right key for it here — the server's modifier state does
+        not affect the output.
       </Paragraph>
       <Paragraph>
-        The setting takes effect the next time the helper starts. If you change it while
-        the helper is running, turn it off and back on.
+        Only change this if you configured a non-US keyboard layout in SteamOS
+        itself. Set it to the same layout SteamOS uses (for example "de" for German,
+        "fr" for French, "gb" for UK). An incorrect value will produce the wrong
+        characters.
+      </Paragraph>
+      <Paragraph>
+        The setting takes effect the next time the helper starts. If you change it
+        while the helper is running, turn it off and back on.
       </Paragraph>
     </PanelSection>
 

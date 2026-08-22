@@ -95,14 +95,20 @@ NOTIFY_COOLDOWN_S = 60
 _LOG_SEVERITY = {"error": 0, "warn": 1, "info": 2, "debug": 3}
 
 
+_ALWAYS_LOG = ("LANGUAGES", "LANGUAGE", "KEYMAP", "XKB")
+
+
 def _should_log_helper_line(line, configured_level):
     """Return True if this helper output line passes the configured log level filter.
 
     The helper prefixes lines with ``INFO:``, ``WARNING:``, ``NOTE:``, ``IPC:``, etc.
     Anything at or above the configured severity passes; unrecognised prefixes always pass.
+    Diagnostic lines about languages and keymaps always pass regardless of level.
     """
-    threshold = _LOG_SEVERITY.get(configured_level, 2)
     upper = line.upper()
+    if any(kw in upper for kw in _ALWAYS_LOG):
+        return True
+    threshold = _LOG_SEVERITY.get(configured_level, 2)
     if "ERROR:" in upper or "FATAL:" in upper:
         return True
     if "WARNING:" in upper:

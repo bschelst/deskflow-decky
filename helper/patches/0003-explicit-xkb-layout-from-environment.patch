@@ -1,30 +1,31 @@
-From 3da1667d2a023b826ea4fafcd94be76d6899ad12 Mon Sep 17 00:00:00 2001
+From 1f1b48ad93de009ea845b595b4051ce3154e34e7 Mon Sep 17 00:00:00 2001
 From: Bart Schelstraete <bart@schelstraete.org>
-Date: Sat, 22 Aug 2026 03:58:21 +0200
-Subject: [PATCH] fix: load XKB layout from environment for headless clients
+Date: Sat, 22 Aug 2026 05:33:37 +0200
+Subject: [PATCH] fix: XKB layout from environment and CapsLock keymap entry
+ fix
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
-When running under QT_QPA_PLATFORM=offscreen (as in a flatpak sandbox),
-two things break:
+Three fixes for headless libei clients:
 
-1. DeskflowXkbKeyboard cannot open an X11 display to read the keyboard
-   layout, so it defaults to "us". This means the language advertised
-   to the server is wrong when the actual layout differs, causing the
-   server to translate keys incorrectly.
+1. EiKeyState::initDefaultKeymap reads XKB_DEFAULT_* env vars explicitly
+   and passes them as xkb_rule_names. Fixes keymap guessing in flatpak
+   sandbox with QT_QPA_PLATFORM=offscreen.
 
-2. EiKeyState::initDefaultKeymap() calls xkb_keymap_new_from_names with
-   nullptr, which should read XKB_DEFAULT_LAYOUT from the environment
-   but silently fails in some sandbox configurations.
+2. DeskflowXkbKeyboard reads XKB_DEFAULT_LAYOUT when no X display is
+   available, so the correct language is advertised to the server.
 
-Fix both by reading XKB_DEFAULT_LAYOUT (and the other XKB_DEFAULT_*
-variables) explicitly from the environment. The language detection now
-advertises the correct layout to the server, and the keymap is compiled
-with the right layout for key translation.
-
-When no environment variables are set the behaviour is unchanged.
+3. EiKeyState::getKeyMap CapsLock entry generation: the in-place mutation
+   of m_required destroyed the original value, so unshifted letters had
+   no entry with m_required=0. findBestKey then picked a CapsLock entry,
+   causing keysForModifierState to toggle CapsLock ON before pressing the
+   key — producing uppercase output. Save and restore the original
+   m_required so the unshifted entry is preserved.
 ---
- src/lib/deskflow/unix/DeskflowXkbKeyboard.cpp | 13 ++++++++++-
- src/lib/platform/EiKeyState.cpp               | 23 ++++++++++++++++++-
- 2 files changed, 34 insertions(+), 2 deletions(-)
+ src/lib/deskflow/unix/DeskflowXkbKeyboard.cpp | 13 ++++++++-
+ src/lib/platform/EiKeyState.cpp               | 28 +++++++++++++++++--
+ 2 files changed, 38 insertions(+), 3 deletions(-)
 
 diff --git a/src/lib/deskflow/unix/DeskflowXkbKeyboard.cpp b/src/lib/deskflow/unix/DeskflowXkbKeyboard.cpp
 index b04af71..1783447 100644
@@ -58,7 +59,7 @@ index b04af71..1783447 100644
  }
  
 diff --git a/src/lib/platform/EiKeyState.cpp b/src/lib/platform/EiKeyState.cpp
-index 473ae66..8871797 100644
+index 473ae66..5b7dacc 100644
 --- a/src/lib/platform/EiKeyState.cpp
 +++ b/src/lib/platform/EiKeyState.cpp
 @@ -14,6 +14,7 @@
@@ -98,6 +99,24 @@ index 473ae66..8871797 100644
  
    if (m_xkbState) {
      xkb_state_unref(m_xkbState);
+@@ -282,13 +303,16 @@ void EiKeyState::getKeyMap(deskflow::KeyMap &keyMap)
+ 
+         assignGeneratedModifiers(keycode, item);
+ 
+-        // add capslock version of key is sensitive to capslock
++        // add capslock version of key if sensitive to capslock
+         if (item.m_sensitive & KeyModifierShift && item.m_sensitive & KeyModifierCapsLock) {
++          auto origRequired = item.m_required;
+           item.m_required &= ~KeyModifierShift;
+           item.m_required |= KeyModifierCapsLock;
+           keyMap.addKeyEntry(item);
+           item.m_required |= KeyModifierShift;
+           item.m_required &= ~KeyModifierCapsLock;
++          keyMap.addKeyEntry(item);
++          item.m_required = origRequired;
+         }
+ 
+         keyMap.addKeyEntry(item);
 -- 
 2.53.0
 

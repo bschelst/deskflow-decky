@@ -329,7 +329,9 @@ export const SettingsPage: FC = () => {
           width="fixed"
           description={
             fieldErrors.keyboard_layout ??
-            "XKB layout name (e.g. us, be, de, fr, gb). Empty uses the default."
+            "Must match this machine's layout, not the server's. Leave empty " +
+              "for US (the SteamOS default). Only change if you configured a " +
+              "different layout in SteamOS."
           }
           value={settings.keyboard_layout}
           onCommit={(raw) => {
