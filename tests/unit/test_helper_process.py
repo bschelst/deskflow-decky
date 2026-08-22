@@ -16,6 +16,7 @@ from helper_process import (
     build_environment,
     clean_subprocess_env,
     find_stray_helpers,
+    is_gamescope_running,
     next_backoff_delay,
     resolve_backend,
 )
@@ -368,3 +369,57 @@ def test_missing_proc_is_not_an_error():
 def test_unreadable_cmdline_is_skipped(tmp_path):
     (tmp_path / "202").mkdir()  # no cmdline file at all
     assert find_stray_helpers(proc_root=str(tmp_path), own_pid=1) == []
+
+
+# ------------------------------------------------------------------ gaming mode detection
+#
+# plugin_loader is a bare systemd *system* service with no graphical session
+# environment at all -- confirmed on hardware, 2026-08-22, by reading its actual
+# /proc/<pid>/environ: WAYLAND_DISPLAY is simply absent, in Gaming Mode or Desktop
+# Mode alike. An env-var check there would silently return "not gaming" forever.
+
+
+def make_proc(tmp_path, pid, argv0):
+    d = tmp_path / str(pid)
+    d.mkdir()
+    (d / "cmdline").write_bytes(argv0.encode() + b"\x00")
+
+
+def test_detects_gamescope_running(tmp_path):
+    make_proc(
+        tmp_path, 501,
+        "gamescope\x00--generate-drm-mode\x00fixed\x00-w\x001280\x00-h\x00800",
+    )
+    assert is_gamescope_running(proc_root=str(tmp_path)) is True
+
+
+def test_absolute_path_argv0_still_matches(tmp_path):
+    make_proc(tmp_path, 501, "/usr/bin/gamescope\x00-w\x001280")
+    assert is_gamescope_running(proc_root=str(tmp_path)) is True
+
+
+def test_does_not_match_the_wrapper_script(tmp_path):
+    # start-gamescope-session and gamescope-session.target are real processes in the
+    # startup chain (seen on hardware) but are not the compositor itself.
+    make_proc(tmp_path, 501, "/bin/sh\x00/usr/bin/start-gamescope-session")
+    assert is_gamescope_running(proc_root=str(tmp_path)) is False
+
+
+def test_does_not_match_a_substring_of_its_own_name(tmp_path):
+    make_proc(tmp_path, 501, "gamescope-wl-helper\x00")
+    assert is_gamescope_running(proc_root=str(tmp_path)) is False
+
+
+def test_no_gamescope_process_means_desktop_mode(tmp_path):
+    make_proc(tmp_path, 501, "plasmashell\x00")
+    make_proc(tmp_path, 502, "kwin_wayland\x00")
+    assert is_gamescope_running(proc_root=str(tmp_path)) is False
+
+
+def test_missing_proc_root_is_not_an_error():
+    assert is_gamescope_running(proc_root="/nonexistent-proc") is False
+
+
+def test_gamescope_unreadable_cmdline_is_skipped(tmp_path):
+    (tmp_path / "202").mkdir()  # no cmdline file at all
+    assert is_gamescope_running(proc_root=str(tmp_path)) is False

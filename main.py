@@ -35,6 +35,7 @@ from helper_process import (
     build_environment,
     clean_subprocess_env,
     find_stray_helpers,
+    is_gamescope_running,
     next_backoff_delay,
     resolve_backend,
 )
@@ -189,8 +190,14 @@ async def run_command(argv, timeout=SUBPROCESS_TIMEOUT_S):
 
 
 def _is_gaming_mode():
-    """Gamescope's session names its own Wayland display."""
-    return os.environ.get("WAYLAND_DISPLAY", "").startswith("gamescope")
+    """Whether the deck is currently in Gaming Mode.
+
+    Not an env var check: plugin_loader is a bare systemd system service with no
+    graphical session environment at all (confirmed on hardware, 2026-08-22 --
+    WAYLAND_DISPLAY is simply absent from its environ), so that used to silently
+    return False unconditionally, forever, regardless of the actual mode.
+    """
+    return is_gamescope_running()
 
 
 class Plugin:

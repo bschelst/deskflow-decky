@@ -21,6 +21,7 @@ __all__ = [
     "build_environment",
     "clean_subprocess_env",
     "find_stray_helpers",
+    "is_gamescope_running",
     "next_backoff_delay",
     "resolve_backend",
 ]
@@ -106,6 +107,39 @@ def find_stray_helpers(app_id=APP_ID, proc_root="/proc", own_pid=None):
         if app_id in cmdline and HELPER_COMMAND in cmdline:
             found.append(pid)
     return found
+
+
+def is_gamescope_running(proc_root="/proc"):
+    """Whether Gamescope's own compositor process is alive right now.
+
+    The only reliable way to tell Gaming Mode from Desktop Mode from inside this
+    process. ``plugin_loader`` is a bare systemd *system* service with no graphical
+    session environment at all -- confirmed on hardware, 2026-08-22: WAYLAND_DISPLAY
+    is simply absent from its environ, in Gaming Mode or Desktop Mode alike, so a
+    check like ``os.environ.get("WAYLAND_DISPLAY", "").startswith("gamescope")``
+    silently returns "not gaming" unconditionally, forever. Gamescope's own process
+    presence does not depend on what plugin_loader happened to inherit at boot.
+    """
+    try:
+        entries = os.listdir(proc_root)
+    except OSError:
+        return False
+
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(os.path.join(proc_root, entry, "cmdline"), "rb") as handle:
+                cmdline = handle.read()
+        except OSError:
+            continue
+        argv0 = cmdline.split(b"\x00", 1)[0]
+        # basename: the real binary is /usr/bin/gamescope, argv[0] may be either.
+        # Exact match, not a substring test: must not also match "start-gamescope"
+        # (the wrapper script) or "gamescope-session" (the systemd target/wrapper).
+        if os.path.basename(argv0) == b"gamescope":
+            return True
+    return False
 
 
 def clean_subprocess_env(source=None):
