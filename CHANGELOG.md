@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.0 — 22 Aug 2026
+
+### What's new
+
+- The plugin can now install, configure, and set up autostart for the stock desktop
+  Deskflow app in one click, and sync your server address and screen name between it
+  and the plugin in either direction. Handy if you use both Gaming Mode and Desktop
+  Mode and dont want to type the server address in twice.
+- Gaming Mode and Desktop Mode now actually hand off to each other properly: leaving
+  Gaming Mode releases the connection instead of holding the screen name hostage, and
+  coming back reconnects automatically instead of needing a manual restart every time.
+
+### Fixes
+
+- Found out mid-session that Gaming Mode detection has been silently broken this
+  whole time: it checked an env var that plain doesnt exist on this kind of systemd
+  service, so it always though it was in Desktop Mode. Replaced with checking for
+  Gamescope's own process, which actually works.
+- The "input enabled" toggle in the quick access panel used to just flip a flag that
+  nothing read. It now actually starts and stops the helper, since there is no way to
+  really pause input without dropping the connection anyway.
+- tests/ had snuck into .gitignore by accident, which is a bit of a problem for a
+  folder full of tests that are supposed to be committed.
+
+### Other
+
+- Every source file now has an author header.
+
+
 ## 0.2.0 — 22 Aug 2026
 
 ### What's new

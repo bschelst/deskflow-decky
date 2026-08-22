@@ -1,6 +1,6 @@
 {
   "name": "deskflow-decky",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Use a Deskflow-connected computer's keyboard and mouse in SteamOS Gaming Mode.",
   "type": "module",
   "scripts": {
