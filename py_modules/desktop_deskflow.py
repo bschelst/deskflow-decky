@@ -33,6 +33,7 @@ __all__ = [
     "read_desktop_identity",
     "sync_desktop_identity",
     "write_autostart_entry",
+    "write_initial_client_config",
 ]
 
 #: Flathub's own app id. Never confuse with our APP_ID (helper_process.py) -- that
@@ -44,6 +45,7 @@ _FORBIDDEN = ("\n", "\r", "\x00", "\x1b")
 _REMOTE_HOST_LINE = re.compile(r"(?m)^remoteHost=.*$")
 _COMPUTER_NAME_LINE = re.compile(r"(?m)^computerName=.*$")
 _CORE_MODE_LINE = re.compile(r"(?m)^coreMode=.*$")
+_PORT_LINE = re.compile(r"(?m)^port=.*$")
 
 #: Deskflow's own core mode enum (matches CORE_MODE_CLIENT in deskflow_config.py).
 _CORE_MODE_CLIENT = 1
@@ -124,7 +126,9 @@ def is_desktop_app_running(app_id=DESKTOP_APP_ID, proc_root="/proc"):
 
 
 def read_desktop_identity(path):
-    """``{"remote_host", "computer_name"}`` from the desktop app's config, or None.
+    """``{"remote_host", "computer_name", "port"}`` from the desktop app's config, or
+    None. ``port`` is None if the key is absent -- Deskflow itself omits it when the
+    value is just its own default (24800), so absence is not an error.
 
     None covers both "the app was never installed" and "installed but never run" (no
     config written yet) -- the caller does not need to tell those apart.
@@ -140,23 +144,40 @@ def read_desktop_identity(path):
     if remote is None or name is None:
         return None
 
+    port = _PORT_LINE.search(text)
     return {
         "remote_host": remote.group(0).split("=", 1)[1],
         "computer_name": name.group(0).split("=", 1)[1],
+        "port": port.group(0).split("=", 1)[1] if port else None,
     }
 
 
-def sync_desktop_identity(path, server_host, client_name):
-    """Rewrite only ``remoteHost=`` and ``computerName=`` in the desktop app's config.
+def _set_port(text, server_port):
+    """Substitute an existing ``port=`` line, or insert one after computerName=.
+
+    Deskflow omits the key entirely when it was never explicitly set (falling back to
+    its own internal default), so "insert if absent" is the common case for a config
+    that has never been touched by a human, not an edge case.
+    """
+    port = _safe("server_port", int(server_port))
+    if _PORT_LINE.search(text) is not None:
+        return _PORT_LINE.sub(f"port={port}", text, count=1)
+    return _COMPUTER_NAME_LINE.sub(lambda m: f"{m.group(0)}\nport={port}", text, count=1)
+
+
+def sync_desktop_identity(path, server_host, client_name, server_port):
+    """Rewrite ``remoteHost=``, ``computerName=``, and ``port=`` in the desktop app's
+    config.
 
     Surgical substitution, not a full INI re-serialize: the file also holds Qt-escaped
     keys (``screens\\1\\name=``) and a binary ``@Variant(...)`` blob
     (``clipboardSharingSize``) that round-tripping through a generic parser could
-    mangle. Touching only the two lines we came to touch leaves everything else, and
-    the file's own permissions, byte-for-byte.
+    mangle. Touching only the lines we came to touch leaves everything else, and the
+    file's own permissions, byte-for-byte.
 
-    Raises SyncError if the file is missing or does not already have both keys --
-    appending a key Qt never wrote itself risks a shape QSettings has never seen.
+    Raises SyncError if the file is missing or does not already have both remoteHost
+    and computerName -- appending a key Qt never wrote itself risks a shape QSettings
+    has never seen. port is the one exception: see _set_port.
     """
     host = _safe("server_host", server_host)
     name = _safe("client_name", client_name)
@@ -176,6 +197,7 @@ def sync_desktop_identity(path, server_host, client_name):
 
     text = _REMOTE_HOST_LINE.sub(f"remoteHost={host}", text, count=1)
     text = _COMPUTER_NAME_LINE.sub(f"computerName={name}", text, count=1)
+    text = _set_port(text, server_port)
 
     return _atomic_rewrite(path, text, mode)
 
@@ -196,7 +218,7 @@ def desktop_client_config_needs_bootstrap(path):
     return _COMPUTER_NAME_LINE.search(text) is not None and "[client]" not in text
 
 
-def bootstrap_client_config(path, server_host, client_name):
+def bootstrap_client_config(path, server_host, client_name, server_port):
     """Add a ``[client]`` section to a freshly-launched, not-yet-configured config.
 
     Only for that specific gap: a first launch never asks the user anything, so no
@@ -227,11 +249,48 @@ def bootstrap_client_config(path, server_host, client_name):
         raise SyncError("a [client] section already exists; use sync_desktop_identity instead")
 
     text = _COMPUTER_NAME_LINE.sub(f"computerName={name}", text, count=1)
+    text = _set_port(text, server_port)
     if _CORE_MODE_LINE.search(text) is not None:
         text = _CORE_MODE_LINE.sub(f"coreMode={_CORE_MODE_CLIENT}", text, count=1)
     text = text.rstrip("\n") + f"\n\n[client]\nremoteHost={host}\n"
 
     return _atomic_rewrite(path, text, mode)
+
+
+def write_initial_client_config(path, server_host, client_name, server_port):
+    """Write a brand-new config from scratch: no launch, no race to lose.
+
+    Only the essentials Deskflow itself needs to come up already configured as a
+    client: [core] computerName/coreMode/port and [client] remoteHost. Everything
+    else (GUI state, TLS material, the internalConfig block) is exactly what Deskflow
+    writes for itself on its own first real launch -- confirmed on hardware that a
+    file with only these keys is one QSettings reads and extends without complaint,
+    the same way it already tolerates a human-edited file missing recent additions.
+
+    Refuses to touch an existing file -- that is sync_desktop_identity's or
+    bootstrap_client_config's job, both of which are careful about what they preserve.
+    A fresh write here is only ever correct when there is nothing to preserve yet.
+    """
+    if os.path.exists(path):
+        raise SyncError(f"{path} already exists; use sync or bootstrap instead")
+
+    host = _safe("server_host", server_host)
+    name = _safe("client_name", client_name)
+    port = _safe("server_port", int(server_port))
+
+    text = (
+        "[core]\n"
+        f"computerName={name}\n"
+        f"coreMode={_CORE_MODE_CLIENT}\n"
+        f"port={port}\n"
+        "\n"
+        "[client]\n"
+        f"remoteHost={host}\n"
+    )
+
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    return _atomic_rewrite(path, text, 0o644)
 
 
 #: The real system-scope export dir. A parameter everywhere below, not a literal

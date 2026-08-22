@@ -26,6 +26,7 @@ from desktop_deskflow import (
     read_desktop_identity,
     sync_desktop_identity,
     write_autostart_entry,
+    write_initial_client_config,
 )
 from diagnostics import build_report, redact_line
 from discovery import discover_socket
@@ -110,12 +111,6 @@ SERVER_PROBE_TIMEOUT_S = 4
 
 #: `flatpak install` fetches over the network; generous on purpose.
 INSTALL_TIMEOUT_S = 180
-
-#: The offscreen bootstrap launch of the desktop app: always runs the full duration
-#: (nothing makes a GUI app exit on its own), so this is a deliberate wait, not a
-#: generous ceiling. 6s matched hardware testing (2026-08-22) -- long enough for Qt to
-#: write its default config, short enough not to make "Install" feel stuck.
-BOOTSTRAP_LAUNCH_TIMEOUT_S = 6
 
 #: How often to poll for Gaming Mode returning. A cheap env-var read, not a subprocess
 #: call, so polling this often costs nothing worth avoiding; the point is noticing the
@@ -1060,9 +1055,19 @@ class Plugin:
                 }
             )
 
+        # port is None when the key is simply absent -- Deskflow omits it when it was
+        # never explicitly set, falling back to its own internal default (24800, same
+        # as DEFAULTS["server_port"]), which then counts as in sync with that default.
+        desktop_port = identity["port"]
+        port_in_sync = (
+            int(desktop_port) == self._settings.get("server_port")
+            if desktop_port is not None
+            else self._settings.get("server_port") == 24800
+        )
         in_sync = (
             identity["remote_host"] == self._settings.get("server_host")
             and identity["computer_name"] == self._settings.get("client_name")
+            and port_in_sync
         )
         return ok(
             {
@@ -1096,6 +1101,7 @@ class Plugin:
                 DESKTOP_DESKFLOW_CONFIG_PATH,
                 self._settings.get("server_host"),
                 self._settings.get("client_name"),
+                self._settings.get("server_port"),
             )
         except SyncError as exc:
             return err("desktop_app_not_found", str(exc))
@@ -1124,9 +1130,11 @@ class Plugin:
                 "Desktop Mode first.",
             )
 
-        result = await self.set_settings(
-            {"server_host": identity["remote_host"], "client_name": identity["computer_name"]}
-        )
+        patch = {"server_host": identity["remote_host"], "client_name": identity["computer_name"]}
+        if identity["port"] is not None:
+            patch["server_port"] = int(identity["port"])
+
+        result = await self.set_settings(patch)
         if result["ok"]:
             decky.logger.info(
                 "Pulled server address and screen name from the desktop Deskflow app (%s)",
@@ -1158,39 +1166,33 @@ class Plugin:
                     "install_failed", "Could not install the desktop Deskflow app from Flathub."
                 )
 
-        # A first launch never asks the user anything, so nothing ever blocks on a
-        # wizard here -- it just needs the chance to write its own [core] defaults.
-        # The offscreen launch always runs the full timeout (there is nothing that
-        # makes a GUI app exit on its own); that is the expected, successful path.
-        identity = await self._loop.run_in_executor(
-            None, read_desktop_identity, DESKTOP_DESKFLOW_CONFIG_PATH
-        )
-        if identity is None:
-            try:
-                await run_command(
-                    [
-                        "flatpak", "run", "--command=deskflow",
-                        "--env=QT_QPA_PLATFORM=offscreen", DESKTOP_APP_ID,
-                    ],
-                    timeout=BOOTSTRAP_LAUNCH_TIMEOUT_S,
-                )
-            except CommandTimeout:
-                pass
-            except Exception:  # noqa: BLE001 - best-effort; the check below is authoritative
-                decky.logger.warning("Bootstrap launch of the desktop app raised", exc_info=True)
-
+        # No launch involved at all: write the config directly before anything ever
+        # runs, so there is no process left to race against it. Confirmed on hardware
+        # (2026-08-22) that the previous approach -- launch the app offscreen so it
+        # writes its own [core] defaults, then patch [client] in afterward -- left an
+        # orphaned GUI process behind (the timeout only kills run_command's direct
+        # child, the same instance-registry gap _kill_helper_app exists for on our own
+        # helper), which later flushed its own stale in-memory settings back over the
+        # file once it eventually exited, undoing the configuration.
+        host = self._settings.get("server_host")
+        name = self._settings.get("client_name")
+        port = self._settings.get("server_port")
         try:
-            needs_bootstrap = await self._loop.run_in_executor(
-                None, desktop_client_config_needs_bootstrap, DESKTOP_DESKFLOW_CONFIG_PATH
+            identity = await self._loop.run_in_executor(
+                None, read_desktop_identity, DESKTOP_DESKFLOW_CONFIG_PATH
             )
-            configure = bootstrap_client_config if needs_bootstrap else sync_desktop_identity
-            await self._loop.run_in_executor(
-                None,
-                configure,
-                DESKTOP_DESKFLOW_CONFIG_PATH,
-                self._settings.get("server_host"),
-                self._settings.get("client_name"),
-            )
+            if identity is None and not os.path.exists(DESKTOP_DESKFLOW_CONFIG_PATH):
+                await self._loop.run_in_executor(
+                    None, write_initial_client_config, DESKTOP_DESKFLOW_CONFIG_PATH, host, name, port
+                )
+            else:
+                needs_bootstrap = await self._loop.run_in_executor(
+                    None, desktop_client_config_needs_bootstrap, DESKTOP_DESKFLOW_CONFIG_PATH
+                )
+                configure = bootstrap_client_config if needs_bootstrap else sync_desktop_identity
+                await self._loop.run_in_executor(
+                    None, configure, DESKTOP_DESKFLOW_CONFIG_PATH, host, name, port
+                )
         except SyncError as exc:
             return err("desktop_app_setup_failed", str(exc))
 

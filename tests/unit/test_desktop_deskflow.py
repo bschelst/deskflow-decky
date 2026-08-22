@@ -6,6 +6,8 @@ Fixture content below is trimmed from the real file read off hardware
 parser could mangle, to prove the surgical substitution really does leave them alone.
 """
 
+import os
+
 import pytest
 from desktop_deskflow import (
     DESKTOP_APP_ID,
@@ -21,6 +23,7 @@ from desktop_deskflow import (
     read_desktop_identity,
     sync_desktop_identity,
     write_autostart_entry,
+    write_initial_client_config,
 )
 
 # The exact shape a plain first launch writes -- captured on hardware (2026-08-22) by
@@ -94,7 +97,18 @@ def test_config_path_uses_the_upstream_app_id():
 
 def test_reads_the_current_identity(tmp_path):
     identity = read_desktop_identity(write_config(tmp_path))
-    assert identity == {"remote_host": "bschelst-thinkpad-p70", "computer_name": "steamdeck2"}
+    assert identity == {
+        "remote_host": "bschelst-thinkpad-p70",
+        "computer_name": "steamdeck2",
+        "port": "24800",
+    }
+
+
+def test_reads_a_missing_port_as_none(tmp_path):
+    # FRESH_LAUNCH_CONFIG has no port= key at all -- Deskflow omits it when unset.
+    path = tmp_path / "Deskflow.conf"
+    path.write_text("[core]\ncomputerName=x\n\n[client]\nremoteHost=y\n")
+    assert read_desktop_identity(str(path))["port"] is None
 
 
 def test_missing_file_returns_none(tmp_path):
@@ -110,13 +124,14 @@ def test_file_without_the_expected_keys_returns_none(tmp_path):
 # ---------------------------------------------------------------------- syncing
 
 
-def test_sync_rewrites_only_the_two_lines(tmp_path):
+def test_sync_rewrites_the_three_lines(tmp_path):
     path = write_config(tmp_path)
-    sync_desktop_identity(path, "new-server", "steamdeck-99")
+    sync_desktop_identity(path, "new-server", "steamdeck-99", 24801)
 
     text = open(path).read()
     assert "remoteHost=new-server" in text
     assert "computerName=steamdeck-99" in text
+    assert "port=24801" in text
     # Everything else -- including the escaped key and the binary blob -- untouched.
     assert "xdpRestoreToken=18c4bdbf-325c-481f-afc0-fab374a23763" in text
     assert "screens\\1\\name=" in text
@@ -124,24 +139,32 @@ def test_sync_rewrites_only_the_two_lines(tmp_path):
     assert "certificate=/home/deck/.var/app/org.deskflow.deskflow" in text
 
 
+def test_sync_inserts_port_when_the_key_was_never_there(tmp_path):
+    path = tmp_path / "Deskflow.conf"
+    path.write_text("[core]\ncomputerName=x\n\n[client]\nremoteHost=y\n")
+    path.chmod(0o644)
+    sync_desktop_identity(str(path), "host", "name", 24800)
+    assert "port=24800" in open(path).read()
+
+
 def test_sync_preserves_file_permissions(tmp_path):
     import os
 
     path = write_config(tmp_path, mode=0o644)
-    sync_desktop_identity(path, "host", "name")
+    sync_desktop_identity(path, "host", "name", 24800)
     assert os.stat(path).st_mode & 0o777 == 0o644
 
 
 def test_sync_raises_when_the_file_is_missing(tmp_path):
     with pytest.raises(SyncError):
-        sync_desktop_identity(str(tmp_path / "nope.conf"), "host", "name")
+        sync_desktop_identity(str(tmp_path / "nope.conf"), "host", "name", 24800)
 
 
 def test_sync_raises_when_the_expected_keys_are_absent(tmp_path):
     path = tmp_path / "Deskflow.conf"
     path.write_text("[core]\nlanguage=en\n")
     with pytest.raises(SyncError):
-        sync_desktop_identity(str(path), "host", "name")
+        sync_desktop_identity(str(path), "host", "name", 24800)
 
 
 @pytest.mark.parametrize("bad", ["evil\nkeySize=1", "evil\r", "evil\x00"])
@@ -150,12 +173,12 @@ def test_sync_refuses_a_value_with_a_control_character(tmp_path, bad):
     # lines into a config file that is not even ours.
     path = write_config(tmp_path)
     with pytest.raises(SyncError):
-        sync_desktop_identity(path, bad, "name")
+        sync_desktop_identity(path, bad, "name", 24800)
 
 
 def test_sync_returns_the_path(tmp_path):
     path = write_config(tmp_path)
-    assert sync_desktop_identity(path, "host", "name") == path
+    assert sync_desktop_identity(path, "host", "name", 24800) == path
 
 
 # --------------------------------------------------------------- is the app running
@@ -239,13 +262,14 @@ def test_does_not_need_bootstrap_when_never_launched_at_all(tmp_path):
 
 def test_bootstrap_adds_a_client_section(tmp_path):
     path = write_fresh_config(tmp_path)
-    bootstrap_client_config(path, "new-server", "steamdeck-99")
+    bootstrap_client_config(path, "new-server", "steamdeck-99", 24800)
 
     text = open(path).read()
     assert "[client]" in text
     assert "remoteHost=new-server" in text
     assert "computerName=steamdeck-99" in text
     assert "coreMode=1" in text
+    assert "port=24800" in text
     # Everything from the first-launch bootstrap survives untouched.
     assert "clipboardSharingSize=@Variant(" in text
     assert "screens\\1\\name=" in text
@@ -255,27 +279,76 @@ def test_bootstrap_preserves_file_permissions(tmp_path):
     import os
 
     path = write_fresh_config(tmp_path)
-    bootstrap_client_config(path, "host", "name")
+    bootstrap_client_config(path, "host", "name", 24800)
     assert os.stat(path).st_mode & 0o777 == 0o644
 
 
 def test_bootstrap_raises_when_never_launched(tmp_path):
     with pytest.raises(SyncError):
-        bootstrap_client_config(str(tmp_path / "nope.conf"), "host", "name")
+        bootstrap_client_config(str(tmp_path / "nope.conf"), "host", "name", 24800)
 
 
 def test_bootstrap_raises_when_a_client_section_already_exists(tmp_path):
     # That is sync_desktop_identity's job -- bootstrap only handles the empty case.
     path = write_config(tmp_path)  # already has [client]
     with pytest.raises(SyncError):
-        bootstrap_client_config(path, "host", "name")
+        bootstrap_client_config(path, "host", "name", 24800)
 
 
 @pytest.mark.parametrize("bad", ["evil\nkeySize=1", "evil\r", "evil\x00"])
 def test_bootstrap_refuses_a_value_with_a_control_character(tmp_path, bad):
     path = write_fresh_config(tmp_path)
     with pytest.raises(SyncError):
-        bootstrap_client_config(path, bad, "name")
+        bootstrap_client_config(path, bad, "name", 24800)
+
+
+# ---------------------------------------------------------- brand-new config, no launch
+
+
+def test_write_initial_client_config_from_scratch(tmp_path):
+    path = str(tmp_path / "app" / "Deskflow.conf")
+    written = write_initial_client_config(path, "host", "name", 24800)
+
+    assert written == path
+    text = open(path).read()
+    assert "[core]" in text
+    assert "computerName=name" in text
+    assert "coreMode=1" in text
+    assert "port=24800" in text
+    assert "[client]" in text
+    assert "remoteHost=host" in text
+
+
+def test_write_initial_client_config_creates_missing_directories(tmp_path):
+    path = str(tmp_path / "deep" / "nested" / "Deskflow.conf")
+    write_initial_client_config(path, "host", "name", 24800)
+    assert os.path.isfile(path)
+
+
+def test_write_initial_client_config_is_readable_by_read_desktop_identity(tmp_path):
+    path = str(tmp_path / "Deskflow.conf")
+    write_initial_client_config(path, "host", "name", 24800)
+    assert read_desktop_identity(path) == {
+        "remote_host": "host",
+        "computer_name": "name",
+        "port": "24800",
+    }
+
+
+def test_write_initial_client_config_refuses_to_overwrite_an_existing_file(tmp_path):
+    path = write_config(tmp_path)  # REAL_CONFIG fixture -- something real to preserve
+    with pytest.raises(SyncError):
+        write_initial_client_config(path, "host", "name", 24800)
+    # Untouched: proof this really did refuse rather than overwrite-then-raise.
+    assert open(path).read() == REAL_CONFIG
+
+
+@pytest.mark.parametrize("bad", ["evil\nkeySize=1", "evil\r", "evil\x00"])
+def test_write_initial_client_config_refuses_a_value_with_a_control_character(tmp_path, bad):
+    path = str(tmp_path / "Deskflow.conf")
+    with pytest.raises(SyncError):
+        write_initial_client_config(path, bad, "name", 24800)
+    assert not os.path.exists(path)
 
 
 # -------------------------------------------------------------------------- autostart
