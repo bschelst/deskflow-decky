@@ -233,11 +233,6 @@ class Plugin:
         # Guards against scheduling _stop() once per buffered line: deskflow-core can
         # log the eis-lost warning several times before the first stop task even runs.
         self._eis_lost_stop_scheduled = False
-        # True only while a stop was ours, for leaving Gaming Mode -- not a manual
-        # stop, not the crash-loop failsafe. Only this case should ever be resumed
-        # automatically; the other two are the user's or the failsafe's decision to
-        # respect, not override.
-        self._stopped_for_desktop_mode = False
         self._gaming_mode_watcher = None
         self._watcher = FingerprintWatcher(
             on_fingerprint=self._on_peer_fingerprint, logger=decky.logger
@@ -529,11 +524,22 @@ class Plugin:
             )
 
     async def _watch_for_gaming_mode_return(self):
-        """Restart the helper when Gaming Mode comes back, if we stopped it ourselves.
+        """Restart the helper when Gaming Mode comes back, whenever it isn't running.
 
         plugin_loader runs continuously across a mode switch, so nothing else ever
-        notices Gaming Mode returning -- without this, the eis-lost stop earlier
-        leaves the helper down until the user restarts it by hand every single time.
+        notices Gaming Mode returning -- without this, the helper stays down until the
+        user restarts it by hand every single time.
+
+        Not gated on how it ended up not running. Originally this only resumed a stop
+        the eis-lost handler caused itself (_stopped_for_desktop_mode), on the theory
+        that a manual stop or the crash-loop failsafe should not be overridden. But
+        reproduced on hardware: restarting the plugin while in Desktop Mode runs the
+        boot-time autostart retry, which exhausts its budget and gives up into "error"
+        long before Gaming Mode ever returns -- a state that flag was never set for, so
+        the helper stayed down even though autostart_gaming_mode was still on. The
+        crash-loop failsafe already turns that setting off when it trips, so checking
+        it here still respects the failsafe; a manual stop staying off across a mode
+        cycle was never something autostart_gaming_mode promised in the first place.
 
         Also stops the desktop Deskflow app first, unconditionally, on every return
         to Gaming Mode: reproduced on hardware twice in one session, if it is still
@@ -541,11 +547,6 @@ class Plugin:
         server rejects our reconnect with "already has a connected client" for
         roughly 15 seconds after -- long after the process itself is gone. Doing this
         before attempting our own reconnect avoids that race outright.
-
-        The helper restart itself only resumes a stop this exact code path caused
-        (_stopped_for_desktop_mode). A manual stop or the crash-loop failsafe are the
-        user's or the failsafe's decision to respect, not something to override the
-        moment Gamescope reappears.
         """
         was_gaming = _is_gaming_mode()
         try:
@@ -554,12 +555,7 @@ class Plugin:
                 now_gaming = _is_gaming_mode()
                 if now_gaming and not was_gaming:
                     await self._stop_desktop_app_if_running()
-                    if (
-                        self._stopped_for_desktop_mode
-                        and self._settings.get("autostart_gaming_mode")
-                        and not self._helper.running
-                    ):
-                        self._stopped_for_desktop_mode = False
+                    if self._settings.get("autostart_gaming_mode") and not self._helper.running:
                         decky.logger.info("Gaming Mode returned; restarting the helper.")
                         self._loop.create_task(self._autostart_with_patience())
                 was_gaming = now_gaming
@@ -569,10 +565,6 @@ class Plugin:
     async def _start_locked(self):
         if self._helper.running:
             return err("already_running", "The helper is already running.")
-
-        # A genuine new start, manual or automatic, always supersedes the reason the
-        # helper was last stopped.
-        self._stopped_for_desktop_mode = False
 
         settings = self._settings
 
@@ -712,7 +704,6 @@ class Plugin:
             and not self._eis_lost_stop_scheduled
         ):
             self._eis_lost_stop_scheduled = True
-            self._stopped_for_desktop_mode = True
             decky.logger.warning(
                 "Lost Gamescope's input socket outside Gaming Mode; stopping so '%s' "
                 "is not held open on the server for nothing.",
