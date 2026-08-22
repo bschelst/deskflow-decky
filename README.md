@@ -10,8 +10,15 @@
 
 <p align="center">
   <a href="https://github.com/bschelst/deskflow-decky/releases"><img src="https://img.shields.io/github/v/release/bschelst/deskflow-decky?label=release&color=blue" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/status-beta-orange" alt="Status: beta">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0-green" alt="License GPL-2.0"></a>
   <a href="https://deskflow.schelstraete.org"><img src="https://img.shields.io/badge/project-site-blueviolet" alt="Project site"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/React-61DAFB?logo=react&logoColor=black" alt="React">
 </p>
 
 ---
