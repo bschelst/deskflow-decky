@@ -123,3 +123,5 @@ modules:
         path: ../patches/0003-explicit-xkb-layout-from-environment.patch
       - type: patch
         path: ../patches/0004-ignore-server-modmask-for-character-keys.patch
+      - type: patch
+        path: ../patches/0005-positional-keyboard-injection.patch

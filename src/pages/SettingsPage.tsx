@@ -1,5 +1,6 @@
 import {
   ButtonItem,
+  ConfirmModal,
   DropdownItem,
   Field,
   PanelSection,
@@ -16,6 +17,7 @@ import {
   getHelperInfo,
   getSettings,
   installHelper,
+  rebootDevice,
   restartHelper,
   runSelfTest,
   setSettings,
@@ -82,6 +84,9 @@ export const SettingsPage: FC = () => {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [helper, setHelper] = useState<HelperInfo | null>(null);
   const [selfTest, setSelfTest] = useState<SelfTestResult | null>(null);
+  // The layout gamescope is actually running with: the value present when this page
+  // loaded. Only a divergence from it makes the restart button meaningful.
+  const [sessionLayout, setSessionLayout] = useState<string | null>(null);
   // One flag for every action button on the page: without it a double-tap can issue
   // two concurrent lifecycle calls to the backend.
   const [busy, setBusy] = useState(false);
@@ -106,8 +111,12 @@ export const SettingsPage: FC = () => {
   useEffect(() => {
     void (async () => {
       const result = await getSettings();
-      if (result.ok) setLocal(result.data);
-      else setNotice({ where: "connection", text: result.error.message });
+      if (result.ok) {
+        setLocal(result.data);
+        setSessionLayout(result.data.keyboard_layout ?? "");
+      } else {
+        setNotice({ where: "connection", text: result.error.message });
+      }
 
       const info = await getHelperInfo();
       if (info.ok) setHelper(info.data);
@@ -329,9 +338,10 @@ export const SettingsPage: FC = () => {
           width="fixed"
           description={
             fieldErrors.keyboard_layout ??
-            "Must match this machine's layout, not the server's. Leave empty " +
-              "for US (the SteamOS default). Only change if you configured a " +
-              "different layout in SteamOS."
+            "The keyboard layout this machine uses, regardless of the server's " +
+              "layout (e.g. us, be, de). Leave empty for US. A change only takes " +
+              "effect after Gaming Mode restarts: reboot the device, or switch " +
+              "to Desktop Mode and back."
           }
           value={settings.keyboard_layout}
           onCommit={(raw) => {
@@ -339,6 +349,33 @@ export const SettingsPage: FC = () => {
             void commit({ keyboard_layout: v });
           }}
         />
+
+        {sessionLayout !== null && settings.keyboard_layout !== sessionLayout && (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              disabled={busy}
+              description="The layout was changed; Gaming Mode must restart before it applies."
+              onClick={() => {
+                showModal(
+                  <ConfirmModal
+                    strTitle="Restart device?"
+                    strDescription="The device will reboot now to apply the new keyboard layout."
+                    strOKButtonText="Restart"
+                    onOK={() => {
+                      void act(async () => {
+                        const result = await rebootDevice();
+                        if (!result.ok) say("connection", result.error.message);
+                      });
+                    }}
+                  />,
+                );
+              }}
+            >
+              Restart device to apply layout
+            </ButtonItem>
+          </PanelSectionRow>
+        )}
 
         <PanelSectionRow>
           <DropdownItem

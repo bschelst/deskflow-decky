@@ -7,18 +7,15 @@ Quick Access Menu -- which in Gaming Mode is genuinely hard to recover from.
 """
 
 import asyncio
+import contextlib
 import os
 import signal
 from asyncio import create_subprocess_exec as spawn_process  # argv list only, no shell
-
-import decky
-from settings import SettingsManager  # provided by the loader
 
 from deskflow_config import write_config
 from diagnostics import build_report, redact_line
 from discovery import discover_socket
 from envelope import err, ok, safe, set_logger
-from identity import derive_client_name
 from helper_process import (
     APP_ID,
     HelperProcess,
@@ -30,8 +27,11 @@ from helper_process import (
     next_backoff_delay,
     resolve_backend,
 )
+from identity import derive_client_name
 from log_watch import FingerprintWatcher, classify_connection
 from screen_size import choose_screen_size, detection_commands
+from session_env import sync_keyboard_layout
+from settings import SettingsManager  # provided by the loader
 from state import HelperState, IllegalTransition
 from tls import (
     PinnedHosts,
@@ -41,6 +41,8 @@ from tls import (
     write_private,
 )
 from validation import DEFAULTS, sanitize_loaded, validate_patch
+
+import decky
 
 
 class CommandTimeout(RuntimeError):
@@ -87,6 +89,16 @@ MIN_HEALTHY_UPTIME_S = 5
 
 #: How long to wait when probing whether the server accepts connections.
 SERVER_PROBE_TIMEOUT_S = 4
+
+#: Autostart retry schedule for the boot race: plugin_loader regularly comes up
+#: before gamescope has created its EIS socket, and a single attempt then parks the
+#: plugin in "error" until someone presses start. Retry while the socket is simply
+#: not there yet; give up only once the schedule is exhausted (~90s covers even a
+#: slow session start). Manual starts are unaffected and stay single-shot.
+AUTOSTART_RETRY_DELAYS_S = (2, 3, 5, 5, 10, 15, 15, 15, 20)
+
+#: Error codes that mean "the environment is not ready yet", worth retrying at boot.
+_AUTOSTART_RETRYABLE = ("socket_not_found", "backend_unavailable")
 
 #: Minimum seconds between two toast notifications. A server that is stopped and
 #: restarted rapidly would otherwise produce a connected/disconnected pair per cycle.
@@ -138,13 +150,13 @@ async def run_command(argv, timeout=SUBPROCESS_TIMEOUT_S):
     )
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         process.kill()
         await process.wait()
-        raise CommandTimeout("command timed out: {0}".format(argv[0])) from None
+        raise CommandTimeout(f"command timed out: {argv[0]}") from None
     if process.returncode != 0:
         detail = (stderr or b"").decode("utf-8", "replace").strip()
-        raise RuntimeError("{0} failed: {1}".format(argv[0], detail[:200]))
+        raise RuntimeError(f"{argv[0]} failed: {detail[:200]}")
     return stdout
 
 
@@ -197,7 +209,8 @@ class Plugin:
 
         if self._settings.get("autostart_gaming_mode"):
             decky.logger.info("Autostart is enabled; starting helper.")
-            await self._start()
+            # As a task: _main must not block the loader for the whole retry schedule.
+            self._loop.create_task(self._autostart_with_patience())
 
         decky.logger.info("deskflow-decky backend ready.")
 
@@ -256,6 +269,15 @@ class Plugin:
         self._settings = updated
         self._settings_manager.setSetting("settings", updated)
         decky.logger.info("Settings updated: %s", ", ".join(sorted(patch)))
+        if "keyboard_layout" in patch:
+            changed = sync_keyboard_layout(
+                decky.DECKY_USER_HOME, updated.get("keyboard_layout", ""), decky.logger
+            )
+            if changed:
+                decky.logger.info(
+                    "Gamescope reads the layout at session start: restart Gaming Mode "
+                    "for the new keyboard layout to take effect."
+                )
         return ok(dict(updated))
 
     # ----------------------------------------------------------------- status
@@ -301,7 +323,7 @@ class Plugin:
         self._notified_disconnect = True
         self._notify(
             "Deskflow Decky disconnected",
-            "Lost the connection to {0}. {1}".format(
+            "Lost the connection to {}. {}".format(
                 self._server_label(),
                 "Reconnecting automatically."
                 if self._settings.get("reconnect_enabled")
@@ -317,7 +339,7 @@ class Plugin:
         than a stream, and never a lone "reconnected" out of nowhere.
         """
         self._notify(
-            "Deskflow Decky reconnected", "Connected to {0} again.".format(self._server_label())
+            "Deskflow Decky reconnected", f"Connected to {self._server_label()} again."
         )
 
     def _on_state_change(self, origin, target, reason):
@@ -330,7 +352,7 @@ class Plugin:
                 self._announced_connection = True
                 self._notify(
                     "Deskflow Decky connected",
-                    "Keyboard and mouse from {0} are available.".format(self._server_label()),
+                    f"Keyboard and mouse from {self._server_label()} are available.",
                 )
             elif self._notified_disconnect:
                 # Only announce a recovery if a loss was announced. A blip that never
@@ -367,6 +389,7 @@ class Plugin:
                 )
                 stdout, _ = await asyncio.wait_for(process.communicate(), timeout=5)
             except Exception:  # noqa: BLE001 - a missing tool is not an error here
+                decky.logger.debug("Probe via %s did not work; trying the next tool.", argv[0])
                 continue
             size = parse(stdout.decode("utf-8", "replace"))
             if size:
@@ -422,6 +445,30 @@ class Plugin:
     async def _start(self):
         async with self._lifecycle:
             return await self._start_locked()
+
+    def _autostart_may_retry(self, result):
+        """Whether an autostart attempt failed only because the session is not up yet."""
+        if not isinstance(result, dict) or result.get("ok"):
+            return False
+        error = result.get("error") or {}
+        return error.get("code") in _AUTOSTART_RETRYABLE
+
+    async def _autostart_with_patience(self):
+        result = await self._start()
+        for delay in AUTOSTART_RETRY_DELAYS_S:
+            if not self._autostart_may_retry(result):
+                return
+            await asyncio.sleep(delay)
+            # The user may have started, stopped, or reconfigured in the meantime;
+            # then this boot-time courtesy is over.
+            if self._helper.running or self._state.state != "error":
+                return
+            decky.logger.info("Input socket not there yet; retrying autostart.")
+            result = await self._start()
+        if self._autostart_may_retry(result):
+            decky.logger.warning(
+                "Autostart gave up: the Gamescope input socket never appeared."
+            )
 
     async def _start_locked(self):
         if self._helper.running:
@@ -520,9 +567,9 @@ class Plugin:
                     {
                         "title": "Deskflow Decky autostart disabled",
                         "body": (
-                            "The helper failed {0} times without connecting, so it will "
+                            f"The helper failed {failures} times without connecting, so it will "
                             "no longer start by itself. Run the self-test, then start it "
-                            "manually once it passes.".format(failures)
+                            "manually once it passes."
                         ),
                     },
                 )
@@ -530,7 +577,7 @@ class Plugin:
 
     def _give_up_reason(self, failures):
         """Why we stopped retrying, phrased so the next step is obvious."""
-        base = "The helper failed {0} times in a row".format(failures)
+        base = f"The helper failed {failures} times in a row"
         if self._helper_installed is False:
             return base + ". The Deskflow helper does not appear to be installed."
         return base + ". See the plugin log for details."
@@ -581,10 +628,9 @@ class Plugin:
         future start, because Deskflow refuses a second instance ("an instance of
         deskflow core is already running", exit 5) -- so the plugin wedges permanently.
         """
-        try:
+        # Suppress everything: "nothing was running" is the common case.
+        with contextlib.suppress(Exception):
             await run_command(["flatpak", "kill", APP_ID], timeout=15)
-        except Exception:  # noqa: BLE001 - "nothing was running" is the common case
-            pass
 
         # flatpak kill is not enough on its own: once the launching process dies the
         # instance registry forgets the app and reports "not running" while the
@@ -643,7 +689,7 @@ class Plugin:
                 waiter = self._loop.create_task(self._helper.wait())
                 try:
                     code = await asyncio.wait_for(asyncio.shield(waiter), MIN_HEALTHY_UPTIME_S)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Survived long enough to count as a real connection.
                     self._to_state("connected")
                     if self._resolved_backend == "x11-xtest" and (
@@ -671,7 +717,7 @@ class Plugin:
                     reason = "the helper could not be started"
                     uptime = 0.0
                 else:
-                    reason = "helper exited with code {0} after {1:.1f}s".format(code, uptime)
+                    reason = f"helper exited with code {code} after {uptime:.1f}s"
                 decky.logger.warning(reason)
 
                 # Only a run that actually lasted counts as recovery. Resetting on
@@ -751,6 +797,18 @@ class Plugin:
             return await self._start_locked()
 
     @safe
+    async def reboot_device(self):
+        """Reboot the device, offered by the UI after a keyboard layout change.
+
+        Gamescope reads the layout only at session start, so this is the shortest
+        path to applying it. The helper is stopped first for a clean shutdown.
+        """
+        decky.logger.info("Rebooting at the user's request to apply the keyboard layout.")
+        await self._stop()
+        await run_command(["systemctl", "reboot"])
+        return ok(None)
+
+    @safe
     async def enable_input(self):
         if not self._helper.running:
             return err("not_running", "The helper is not running.")
@@ -801,8 +859,8 @@ class Plugin:
         self._to_state(
             "stopped",
             reason=(
-                "Certificate for {0} was rejected, so nothing is trusted. Turn the "
-                "Helper back on to be asked again.".format(host)
+                f"Certificate for {host} was rejected, so nothing is trusted. Turn the "
+                "Helper back on to be asked again."
             ),
         )
         decky.logger.info("Server certificate rejected for %s", host)
@@ -874,7 +932,7 @@ class Plugin:
         ]
         bundle = None
         for directory in searched:
-            candidate = os.path.join(directory, "{0}.flatpak".format(APP_ID))
+            candidate = os.path.join(directory, f"{APP_ID}.flatpak")
             if os.path.isfile(candidate):
                 bundle = candidate
                 break
@@ -890,9 +948,7 @@ class Plugin:
                 "not_installed",
                 "No helper bundle is bundled with this build yet. The patched Deskflow "
                 "helper still has to be built (milestone M2). Once a release exists, "
-                "put {0}.flatpak in the plugin's bin/ folder and press this again.".format(
-                    APP_ID
-                ),
+                f"put {APP_ID}.flatpak in the plugin's bin/ folder and press this again.",
             )
 
         script = os.path.join(decky.DECKY_PLUGIN_DIR, "packaging", "install-helper.sh")
@@ -915,7 +971,7 @@ class Plugin:
 
         decky.logger.info("Helper install completed.")
         info = await self.get_helper_info()
-        return ok((info.get("data") or {}))
+        return ok(info.get("data") or {})
 
     # ----------------------------------------------------------------- diagnostics
 
@@ -938,7 +994,7 @@ class Plugin:
             with open(os.path.join(LOG_DIR, names[0]), encoding="utf-8", errors="replace") as f:
                 tail = f.readlines()[-count:]
         except OSError as exc:
-            return err("internal", "Could not read the log: {0}".format(exc.strerror))
+            return err("internal", f"Could not read the log: {exc.strerror}")
 
         return ok({"lines": [redact_line(line.rstrip("\n")) for line in tail]})
 
@@ -961,7 +1017,7 @@ class Plugin:
                 "socket_source": discovery.source if discovery else None,
                 "discovery_checked": "; ".join(discovery.checked) if discovery else None,
                 "uinput_present": os.path.exists("/dev/uinput"),
-                "screen_size": "{0}x{1}".format(*self._screen_size) if self._screen_size else None,
+                "screen_size": "{}x{}".format(*self._screen_size) if self._screen_size else None,
                 "helper_pid": self._helper.pid,
                 "tls_enabled": self._settings.get("tls_enabled"),
                 "input_released_on_last_stop": self._input_released_on_last_stop,
@@ -983,17 +1039,13 @@ class Plugin:
                 asyncio.open_connection(host, port), timeout=SERVER_PROBE_TIMEOUT_S
             )
             writer.close()
-            try:
+            with contextlib.suppress(Exception):  # closing is best effort
                 await writer.wait_closed()
-            except Exception:  # noqa: BLE001 - closing is best effort
-                pass
-            return True, "reachable at {0}:{1}".format(host, port)
-        except asyncio.TimeoutError:
-            return False, "no answer from {0}:{1} within {2}s".format(
-                host, port, SERVER_PROBE_TIMEOUT_S
-            )
+            return True, f"reachable at {host}:{port}"
+        except TimeoutError:
+            return False, f"no answer from {host}:{port} within {SERVER_PROBE_TIMEOUT_S}s"
         except OSError as exc:
-            return False, "{0}:{1} - {2}".format(host, port, exc.strerror or "unreachable")
+            return False, "{}:{} - {}".format(host, port, exc.strerror or "unreachable")
 
     @safe
     async def run_self_test(self):
@@ -1058,7 +1110,7 @@ class Plugin:
             "screen_size",
             "Screen size",
             True,
-            "{0}x{1} ({2}). If the pointer cannot reach the whole screen, set this "
+            "{}x{} ({}). If the pointer cannot reach the whole screen, set this "
             "manually.".format(size[0], size[1], "detected" if auto else "set manually"),
         )
 
@@ -1075,7 +1127,7 @@ class Plugin:
                 "trusted_server",
                 "Server certificate trusted",
                 bool(trusted),
-                "{0} trusted".format(len(trusted))
+                f"{len(trusted)} trusted"
                 if trusted
                 else "you will be asked to confirm it on the next connection",
             )
@@ -1088,7 +1140,7 @@ class Plugin:
     async def export_diagnostics(self):
         report = self._diagnostics_payload()
         path = os.path.join(RUNTIME_DIR, "diagnostics.txt")
-        body = "\n".join("{0}: {1}".format(key, value) for key, value in sorted(report.items()))
+        body = "\n".join(f"{key}: {value}" for key, value in sorted(report.items()))
         # Same private-write discipline as the config and trust store: 0600 by
         # construction, then an atomic rename.
         write_private(path, body + "\n")

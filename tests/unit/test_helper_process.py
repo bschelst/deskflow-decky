@@ -116,8 +116,29 @@ def test_environment_is_explicit_not_inherited():
             "DESKFLOW_SCREEN_SIZE",
             "DISPLAY",
             "XKB_DEFAULT_LAYOUT",
+            "DESKFLOW_KEYBOARD_POSITIONAL",
         }
     )
+
+
+def test_a_chosen_layout_enables_positional_keys_on_the_libei_backend():
+    env = build_environment(settings(keyboard_layout="be"), "gamescope-libei", found())
+    assert env["XKB_DEFAULT_LAYOUT"] == "be"
+    # Positional replay is what makes the chosen layout hold regardless of the
+    # server's own layout; it is only meaningful for the Ei backend.
+    assert env["DESKFLOW_KEYBOARD_POSITIONAL"] == "1"
+
+
+def test_a_chosen_layout_on_x11_does_not_enable_positional_keys():
+    env = build_environment(settings(keyboard_layout="be"), "x11-xtest", missing(), display=":1")
+    assert env["XKB_DEFAULT_LAYOUT"] == "be"
+    assert "DESKFLOW_KEYBOARD_POSITIONAL" not in env
+
+
+def test_no_layout_means_no_positional_keys():
+    env = build_environment(settings(), "gamescope-libei", found())
+    assert "XKB_DEFAULT_LAYOUT" not in env
+    assert "DESKFLOW_KEYBOARD_POSITIONAL" not in env
 
 
 def test_libei_backend_declares_a_usable_screen_size():

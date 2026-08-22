@@ -1,0 +1,82 @@
+From d23edc9a871e26aa7bdfa80afa5ea928b419a587 Mon Sep 17 00:00:00 2001
+From: Bart Schelstraete <bart@schelstraete.org>
+Date: Sat, 22 Aug 2026 12:20:09 +0200
+Subject: [PATCH] feat: positional keyboard injection mode via
+ DESKFLOW_KEYBOARD_POSITIONAL
+
+---
+ src/lib/deskflow/KeyState.cpp | 38 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+diff --git a/src/lib/deskflow/KeyState.cpp b/src/lib/deskflow/KeyState.cpp
+index d924076..dfea4ec 100644
+--- a/src/lib/deskflow/KeyState.cpp
++++ b/src/lib/deskflow/KeyState.cpp
+@@ -9,12 +9,27 @@
+ #include "base/Log.h"
+ 
+ #include <algorithm>
++#include <cstdlib>
+ #include <cstring>
+ #include <iterator>
+ #include <list>
+ 
+ static const KeyButton kButtonMask = (KeyButton)(IKeyState::s_numButtons - 1);
+ 
++// Positional keyboard mode: replay the server's physical key positions verbatim
++// and let the local compositor's keymap decide which character each position
++// produces. The client then behaves as a keyboard of the compositor's layout,
++// regardless of the layout configured on the server. Only valid when both ends
++// use xkb-style button numbering (libei/portal primaries and Ei clients).
++static bool positionalKeyboardMode()
++{
++  static const bool enabled = [] {
++    const char *value = std::getenv("DESKFLOW_KEYBOARD_POSITIONAL");
++    return value != nullptr && value[0] == '1';
++  }();
++  return enabled;
++}
++
+ static const KeyID s_decomposeTable[] = {
+     // spacing version of dead keys
+     0x0060, 0x0300, 0x0020,
+@@ -808,6 +823,22 @@ void KeyState::fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton serverID, c
+     return;
+   }
+ 
++  if (positionalKeyboardMode()) {
++    // The primary sends xkb keycodes (evdev + 8); Ei client buttons are evdev.
++    auto localID = (KeyButton)((serverID > 8 ? serverID - 8 : 0) & kButtonMask);
++    if (localID == 0) {
++      return;
++    }
++    Keystrokes positional;
++    positional.push_back(deskflow::KeyMap::Keystroke(localID, true, false, 0));
++    ++m_keys[localID];
++    ++m_syntheticKeys[localID];
++    m_keyClientData[localID] = 0;
++    m_serverKeys[serverID] = localID;
++    fakeKeys(positional, 1);
++    return;
++  }
++
+   Keystrokes keys;
+   ModifierToKeys oldActiveModifiers = m_activeModifiers;
+   const deskflow::KeyMap::KeyItem *keyItem =
+@@ -850,6 +881,13 @@ bool KeyState::fakeKeyRepeat(KeyID id, KeyModifierMask mask, int32_t count, KeyB
+     return false;
+   }
+ 
++  if (positionalKeyboardMode()) {
++    Keystrokes positional;
++    positional.push_back(deskflow::KeyMap::Keystroke(oldLocalID, true, true, m_keyClientData[oldLocalID]));
++    fakeKeys(positional, count);
++    return true;
++  }
++
+   // get keys for key repeat
+   Keystrokes keys;
+   ModifierToKeys oldActiveModifiers = m_activeModifiers;
+-- 
+2.53.0
+

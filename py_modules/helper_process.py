@@ -9,6 +9,7 @@ rather than argv, which is world-readable via ``/proc/<pid>/cmdline``.
 """
 
 import asyncio
+import contextlib
 import os
 import signal
 
@@ -66,7 +67,7 @@ def _clean(field, value):
     text = str(value)
     for bad in _FORBIDDEN_IN_ARGUMENT:
         if bad in text:
-            raise LaunchError("{0} contains an illegal character".format(field))
+            raise LaunchError(f"{field} contains an illegal character")
     return text
 
 
@@ -170,7 +171,7 @@ def build_environment(
     Inheriting Decky's environment would hand the helper a pile of variables it has no
     use for, and would make behaviour depend on how the loader happened to be started.
     """
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or "/run/user/{0}".format(os.getuid())
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
     env = {
         "HOME": home or os.environ.get("HOME", ""),
         "PATH": "/usr/bin:/bin",
@@ -192,7 +193,7 @@ def build_environment(
         # the patched helper needs to be told what screen shape to announce. Without
         # this it claims 1x1, which the server rejects and which strands the pointer.
         width, height = screen_size or DEFAULT_SCREEN_SIZE
-        env["DESKFLOW_SCREEN_SIZE"] = "{0}x{1}".format(width, height)
+        env["DESKFLOW_SCREEN_SIZE"] = f"{width}x{height}"
 
     elif backend == "x11-xtest":
         # PlatformInfo::isWayland() tests XDG_SESSION_TYPE, and that is what makes
@@ -207,11 +208,16 @@ def build_environment(
         env["QT_QPA_PLATFORM"] = "offscreen"
 
     else:
-        raise LaunchError("unknown input backend: {0}".format(backend))
+        raise LaunchError(f"unknown input backend: {backend}")
 
     layout = settings.get("keyboard_layout", "")
     if layout:
         env["XKB_DEFAULT_LAYOUT"] = _clean("keyboard layout", layout)
+        if backend == "gamescope-libei":
+            # Replay the server's physical key positions and let gamescope's keymap
+            # (set to the same layout via environment.d) decide the characters. This
+            # is what makes the chosen layout hold regardless of the server's layout.
+            env["DESKFLOW_KEYBOARD_POSITIONAL"] = "1"
 
     return {key: str(value) for key, value in env.items() if value != ""}
 
@@ -225,15 +231,15 @@ def build_command(
         settings, backend, discovery, display=display, screen_size=screen_size,
     )
 
-    argv = ["flatpak", "run", "--user", "--command={0}".format(HELPER_COMMAND)]
+    argv = ["flatpak", "run", "--user", f"--command={HELPER_COMMAND}"]
     for key in sorted(env):
         if key in NOT_FORWARDED_TO_SANDBOX:
             continue
-        argv.append("--env={0}={1}".format(key, _clean(key, env[key])))
+        argv.append(f"--env={key}={_clean(key, env[key])}")
 
     if backend in BACKENDS_NEEDING_SOCKET:
         # Scope the sandbox grant to exactly the one socket, never a directory.
-        argv.append("--filesystem={0}".format(_clean("socket path", discovery.path)))
+        argv.append("--filesystem={}".format(_clean("socket path", discovery.path)))
 
     argv.append(_clean("app id", app_id))
     argv.append(subcommand)
@@ -329,10 +335,8 @@ class HelperProcess:
         if self._reader is None:
             return
         self._reader.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
             await self._reader
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
         self._reader = None
 
     def _signal_group(self, process, sig):
@@ -359,12 +363,12 @@ class HelperProcess:
 
         try:
             await asyncio.wait_for(process.wait(), timeout=grace)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._log("warning", "Helper did not exit within %ss; killing it", grace)
             self._signal_group(process, signal.SIGKILL)
             try:
                 await asyncio.wait_for(process.wait(), timeout=grace)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._log("error", "Helper could not be killed")
                 await self._stop_reader()
                 return False
