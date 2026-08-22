@@ -1,56 +1,140 @@
-# deskflow-decky
+<p align="center">
+  <img src="images/deskflowdecky-128.png" alt="Deskflow Decky" width="128" height="128">
+</p>
 
-Use a Deskflow-connected computer's keyboard and mouse inside SteamOS **Gaming Mode** — the Steam UI, native Linux games, and Proton games running under Gamescope.
+<h1 align="center">Deskflow Decky</h1>
 
-> **Status: specification only.** No product code exists yet. This repository currently contains the design and the instructions to build it.
+<p align="center">
+  Use your desktop's keyboard and mouse on the Steam Deck — in Gaming Mode.
+</p>
+
+<p align="center">
+  <a href="https://github.com/bschelst/deskflow-decky/releases"><img src="https://img.shields.io/github/v/release/bschelst/deskflow-decky?label=release&color=blue" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0-green" alt="License GPL-2.0"></a>
+  <a href="https://deskflow.schelstraete.org"><img src="https://img.shields.io/badge/project-site-blueviolet" alt="Project site"></a>
+</p>
 
 ---
 
-## What this is
+## ✨ Features
 
-A [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin plus a purpose-built [Deskflow](https://github.com/deskflow/deskflow) helper, packaged as a user-scope Flatpak.
+| | Feature | Details |
+|---|---|---|
+| ⌨️ | **Keyboard input** | Full keyboard forwarding with layout-independent key mapping |
+| 🖱️ | **Mouse input** | Buttons, scroll wheel, and relative pointer motion |
+| 🎮 | **Gaming Mode native** | Injects input directly into Gamescope via libei (EIS) |
+| 🔐 | **TLS + fingerprint trust** | Encrypted connection with interactive fingerprint verification |
+| 🔄 | **Auto-reconnect** | Automatic retry with exponential backoff on disconnect |
+| 🩺 | **Built-in diagnostics** | Self-test, log viewer, and exportable diagnostic reports |
+| ⚙️ | **Configurable** | Input backend, activation mode, log level, and more |
+| 🔔 | **Steam notifications** | Connection state changes surfaced as native Steam toasts |
 
-The Deck runs a Deskflow client that injects keyboard and mouse input directly into Gamescope through its libei (EIS) socket. The Decky plugin handles configuration, process lifecycle, diagnostics, and explicit input activation from the Quick Access Menu.
+## 🤔 Why this exists
 
-**v1 delivers** keyboard, mouse buttons, scroll wheel, and relative pointer motion.
-**v1 does not deliver** clipboard sync, drag-and-drop, cursor-image sync, screen-edge switching, or a promise of universal game compatibility.
+[Deskflow](https://github.com/deskflow/deskflow) works on the Steam Deck in Desktop Mode through the XDG RemoteDesktop portal. In Gaming Mode there is no portal behind Gamescope, so it does not work at all.
 
-## Why it needs to exist
+Gamescope *does* run an EIS server and accepts local libei clients — the input path exists, it just is not reachable from stock Deskflow, which hard-codes the portal backend.
 
-Deskflow works on the Steam Deck in Desktop Mode through the XDG RemoteDesktop portal. In Gaming Mode there is no portal behind Gamescope, so it does not work at all. Gamescope does, however, run an EIS server and accept local libei clients — so the input path exists, it just is not reachable from stock Deskflow, which hard-codes the portal backend.
+**Deskflow Decky** bridges that gap with a purpose-built Deskflow helper and a Decky front end that handles configuration, process lifecycle, diagnostics, and input activation from the Quick Access Menu.
 
-This project bridges that gap with a small, upstreamable patch and a Decky front end.
+## 📦 Installation
 
-## Documentation
+Distribution is via GitHub Releases as a sideload.
 
-| Document | Contents |
-|---|---|
-| [`PROJECT.md`](./PROJECT.md) | **Start here.** The implementation guide: scope, verified baseline, milestones, gates, and the plugin specification. |
-| [`deskflow-gamescope-decky-implementation-plan.md`](./deskflow-gamescope-decky-implementation-plan.md) | The original architecture document. |
-| [`docs/RESEARCH.md`](./docs/RESEARCH.md) | Verified upstream findings with citations, and a drift log. |
-| [`docs/SECURITY.md`](./docs/SECURITY.md) | Threat model and the non-negotiable controls. |
-| [`docs/UI-SPEC.md`](./docs/UI-SPEC.md) | Panel and page layout, alignment rules, fingerprint flow. |
-| [`docs/TESTING.md`](./docs/TESTING.md) | Unit, fake-server, and hardware test plans. |
-| [`docs/RELEASING.md`](./docs/RELEASING.md) | Tag-driven release and sideload installation. |
+### Requirements
 
-## Installation
+- 🎮 Steam Deck running SteamOS with [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) 3.2.6+
+- 🖥️ Gamescope with libeis support (stock SteamOS qualifies)
+- 📦 Flatpak available for the user-scope helper
+- 🌐 A machine on the same network running a Deskflow server
 
-Not yet available. When it is, distribution will be via this repository's GitHub Releases and a documented sideload — **not** the official Decky plugin store, which requires a public repository. See [`docs/RELEASING.md`](./docs/RELEASING.md).
+## 🏗️ Architecture
 
-## Requirements (planned)
+```
+┌──────────────────────────────────────────────────┐
+│  Steam Deck (Gaming Mode)                        │
+│                                                  │
+│  ┌────────────┐     ┌──────────────────────────┐ │
+│  │ Decky      │◄───►│ Python backend            │ │
+│  │ Plugin UI  │     │ (config, lifecycle, diag) │ │
+│  │ (React/TS) │     └──────────┬───────────────┘ │
+│  └────────────┘                │                 │
+│                     ┌──────────▼───────────────┐ │
+│                     │ Deskflow helper           │ │
+│                     │ (Flatpak, libei client)   │ │
+│                     └──────────┬───────────────┘ │
+│                                │ EIS socket      │
+│                     ┌──────────▼───────────────┐ │
+│                     │ Gamescope                 │ │
+│                     └──────────────────────────┘ │
+└──────────────────────────────────────────────────┘
+                         │ TLS
+              ┌──────────▼───────────────┐
+              │ Desktop / Laptop         │
+              │ (Deskflow server)        │
+              └──────────────────────────┘
+```
 
-- Steam Deck running SteamOS with Decky Loader 3.2.6 or newer
-- Gamescope built with libeis support (stock SteamOS is expected to qualify — confirmed during M0)
-- Flatpak available for the user-scope helper install
-- A machine on the same network running a Deskflow server
+**Frontend** — React/TypeScript plugin with Quick Access panel, settings page, and fingerprint trust flow.
 
-## Licence
+**Backend** — Python modules handling Deskflow config generation, helper process management, TLS identity, EIS socket discovery, and diagnostics.
 
-**GPL-2.0**, repository-wide — see [`LICENSE`](./LICENSE). The helper is derived from Deskflow, which is GPL-2.0-only, and the plugin ships under the same licence rather than splitting the repository across two.
+**Helper** — A patched Deskflow client packaged as a user-scope Flatpak, connecting directly to Gamescope's libei socket.
 
-Attribution to the Deskflow project appears in the plugin's About page as a licence obligation, not a courtesy.
+## 🛠️ Development
 
-## Acknowledgements
+```bash
+# Install dependencies
+pnpm install
+
+# Build for production
+pnpm build
+
+# Development with hot reload
+pnpm watch
+
+# Type checking
+pnpm typecheck
+
+# Lint
+pnpm lint
+
+# Run tests
+pnpm test
+
+# Full check (typecheck + lint + test + build)
+pnpm check
+```
+
+## 📁 Project Structure
+
+```
+├── src/
+│   ├── components/     # QuickAccessPanel, StatusRows, FingerprintModal, etc.
+│   ├── pages/          # DeskflowPage, SettingsPage, AboutPage, DocumentationPage
+│   ├── hooks/          # useDeskflowStatus — reactive connection state
+│   ├── api/            # Typed backend calls with Result<T> envelope
+│   ├── lib/            # Validation, formatting, Steam integration
+│   └── assets/         # Embedded logo
+├── py_modules/         # Python backend
+│   ├── helper_process.py   # Flatpak helper lifecycle + backoff
+│   ├── discovery.py        # EIS socket discovery
+│   ├── deskflow_config.py  # Config file generation
+│   ├── tls.py              # TLS certificate + fingerprint management
+│   ├── identity.py         # Client naming
+│   ├── diagnostics.py      # Self-test + export
+│   ├── state.py            # Persistent state
+│   ├── validation.py       # Input validation
+│   └── envelope.py         # Uniform ok/err response wrapper
+├── main.py             # Decky backend entry point
+└── images/             # Project logos and icons
+```
+
+## ⚖️ Licence
+
+**GPL-2.0** — see [LICENSE](./LICENSE). The helper is derived from Deskflow (GPL-2.0-only), and the plugin ships under the same licence. Attribution to the Deskflow project appears in the plugin's About page.
+
+## 🙏 Acknowledgements
 
 - [Deskflow](https://github.com/deskflow/deskflow) — the keyboard and mouse sharing engine this builds on
 - [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) — the Steam Deck plugin platform
