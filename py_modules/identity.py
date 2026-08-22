@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """This Deck's identity on a Deskflow network.
 
 Every Steam Deck and Steam Machine ships with the hostname ``steamdeck``, so using it

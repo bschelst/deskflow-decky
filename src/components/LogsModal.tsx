@@ -1,3 +1,5 @@
+// Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 import { Field, ModalRoot, PanelSectionRow, SteamSpinner } from "@decky/ui";
 import { useEffect, useState, type FC } from "react";
 

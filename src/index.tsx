@@ -1,3 +1,5 @@
+// Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 import { addEventListener, definePlugin, removeEventListener, routerHook, toaster } from "@decky/api";
 import { ErrorBoundary, Navigation, staticClasses } from "@decky/ui";
 import { FaKeyboard } from "react-icons/fa";

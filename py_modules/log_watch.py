@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Observation of the helper's output.
 
 The plugin does not speak the Deskflow protocol itself, so the only channel through

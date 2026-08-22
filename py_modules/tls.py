@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """TLS certificate and trust handling.
 
 ``deskflow-core`` cannot generate its own certificate -- generation lives in Deskflow's

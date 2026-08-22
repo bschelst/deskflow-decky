@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Discovery of Gamescope's EIS socket.
 
 Gamescope creates a socket named ``<wayland-display>-ei`` in ``$XDG_RUNTIME_DIR`` and

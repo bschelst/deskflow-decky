@@ -1,3 +1,5 @@
+// Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 import { Field, PanelSectionRow } from "@decky/ui";
 import type { FC } from "react";
 

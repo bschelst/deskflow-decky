@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Syncing this Deck's identity into the stock Deskflow desktop app.
 
 Both apps share the same ``Deskflow.conf`` INI schema: the desktop app (Flathub's

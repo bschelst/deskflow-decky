@@ -1,3 +1,5 @@
+// Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 /**
  * The one Steam client call this plugin uses. RestartPC is the same path as the
  * power menu's Restart entry, which makes it the reboot that needs no

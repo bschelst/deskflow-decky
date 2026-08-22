@@ -1,3 +1,5 @@
+// Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 /**
  * Typed wrappers around the Python backend.
  *

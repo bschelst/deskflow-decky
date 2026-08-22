@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Working out the compositor's pointer coordinate space.
 
 The client has to announce a screen size, and it must match the space the compositor

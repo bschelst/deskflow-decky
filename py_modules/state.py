@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Helper connection state as an explicit machine.
 
 Inferring state ad hoc from process liveness at each call site is how a UI ends up

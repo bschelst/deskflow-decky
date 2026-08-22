@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Settings validation.
 
 Pure functions with no ``decky`` import so they can be unit-tested off-device.

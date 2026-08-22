@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """The uniform backend response envelope.
 
 Every backend method returns ``{"ok": bool, "data": Any, "error": {...} | None}`` and

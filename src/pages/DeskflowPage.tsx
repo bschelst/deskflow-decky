@@ -1,3 +1,5 @@
+// Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 import { ErrorBoundary, SidebarNavigation } from "@decky/ui";
 import type { FC } from "react";
 

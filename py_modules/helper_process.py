@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Lifecycle of the Deskflow helper flatpak.
 
 Everything that builds a command or an environment is a pure function so it can be

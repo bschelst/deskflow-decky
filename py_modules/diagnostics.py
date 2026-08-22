@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Redacted diagnostics.
 
 Built from an allowlist, never by filtering a full dump: a filter only removes what

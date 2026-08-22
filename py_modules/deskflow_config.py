@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Generation of Deskflow's ``Deskflow.conf``.
 
 ``deskflow-core`` accepts no host, port, or name arguments -- the INI file is the only

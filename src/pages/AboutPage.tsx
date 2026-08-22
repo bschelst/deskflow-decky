@@ -1,3 +1,5 @@
+// Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 import { ButtonItem, Field, Navigation, PanelSection, PanelSectionRow } from "@decky/ui";
 import { useEffect, useState, type FC } from "react";
 

@@ -1,3 +1,5 @@
+# Schelstraete Bart - bart@schelstraete.org - https://github.com/bschelst/deskflow-decky
+
 """Sync the deck user's session environment with the chosen keyboard layout.
 
 gamescope builds its xkb keymap from ``XKB_DEFAULT_LAYOUT`` in the session
