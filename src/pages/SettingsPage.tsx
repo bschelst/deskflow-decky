@@ -17,6 +17,7 @@ import {
   getDesktopDeskflowStatus,
   getHelperInfo,
   getSettings,
+  installDesktopDeskflow,
   installHelper,
   restartHelper,
   runSelfTest,
@@ -240,7 +241,49 @@ export const SettingsPage: FC = () => {
           onCommit={(value) => void commit({ client_name: value.trim() })}
         />
 
-        {desktopDeskflow?.present && !desktopDeskflow.inSync ? (
+        {desktopDeskflow !== null && !desktopDeskflow.installed ? (
+          <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              disabled={busy}
+              description={
+                "Install the stock Deskflow desktop app (for Desktop Mode), configure it " +
+                "with this Deck's server address and screen name, and set it to start " +
+                "automatically when you log in to Desktop Mode."
+              }
+              onClick={() => {
+                showModal(
+                  <ConfirmModal
+                    strTitle="Install desktop Deskflow?"
+                    strDescription={
+                      `This installs org.deskflow.deskflow from Flathub, sets its server ` +
+                      `address to "${settings.server_host}" and screen name to ` +
+                      `"${settings.client_name}", and adds it to Desktop Mode's autostart. ` +
+                      "Can take a minute over a slow connection."
+                    }
+                    strOKButtonText="Install"
+                    onOK={() => {
+                      void act(async () => {
+                        const result = await installDesktopDeskflow();
+                        say(
+                          "connection",
+                          result.ok
+                            ? "Desktop Deskflow installed, configured, and set to autostart."
+                            : result.error.message,
+                        );
+                        await refreshDesktopDeskflow();
+                      });
+                    }}
+                  />,
+                );
+              }}
+            >
+              Install desktop Deskflow
+            </ButtonItem>
+          </PanelSectionRow>
+        ) : null}
+
+        {desktopDeskflow?.installed && desktopDeskflow.present && !desktopDeskflow.inSync ? (
           <PanelSectionRow>
             <ButtonItem
               layout="below"

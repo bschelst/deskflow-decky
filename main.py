@@ -14,11 +14,15 @@ from asyncio import create_subprocess_exec as spawn_process  # argv list only, n
 
 from deskflow_config import write_config
 from desktop_deskflow import (
+    DESKTOP_APP_ID,
     SyncError,
+    bootstrap_client_config,
+    desktop_client_config_needs_bootstrap,
     desktop_config_path,
     is_desktop_app_running,
     read_desktop_identity,
     sync_desktop_identity,
+    write_autostart_entry,
 )
 from diagnostics import build_report, redact_line
 from discovery import discover_socket
@@ -99,6 +103,15 @@ MIN_HEALTHY_UPTIME_S = 5
 
 #: How long to wait when probing whether the server accepts connections.
 SERVER_PROBE_TIMEOUT_S = 4
+
+#: `flatpak install` fetches over the network; generous on purpose.
+INSTALL_TIMEOUT_S = 180
+
+#: The offscreen bootstrap launch of the desktop app: always runs the full duration
+#: (nothing makes a GUI app exit on its own), so this is a deliberate wait, not a
+#: generous ceiling. 6s matched hardware testing (2026-08-22) -- long enough for Qt to
+#: write its default config, short enough not to make "Install" feel stuck.
+BOOTSTRAP_LAUNCH_TIMEOUT_S = 6
 
 #: Autostart retry schedule for the boot race: plugin_loader regularly comes up
 #: before gamescope has created its EIS socket, and a single attempt then parks the
@@ -896,8 +909,22 @@ class Plugin:
 
     # ------------------------------------------------------- stock desktop app sync
 
+    async def _is_desktop_app_installed(self):
+        """Either scope: this device's copy turned out to be a system-scope install
+        from a now-disabled custom remote, not the user-scope Flathub install our own
+        install button uses -- so both have to be checked, not just ours.
+        """
+        for scope in ("--user", "--system"):
+            try:
+                await run_command(["flatpak", "info", scope, DESKTOP_APP_ID], timeout=15)
+                return True
+            except Exception:  # noqa: BLE001 - "not installed at this scope" is not a fault
+                continue
+        return False
+
     @safe
     async def get_desktop_deskflow_status(self):
+        installed = await self._is_desktop_app_installed()
         identity = await self._loop.run_in_executor(
             None, read_desktop_identity, DESKTOP_DESKFLOW_CONFIG_PATH
         )
@@ -906,6 +933,7 @@ class Plugin:
         if identity is None:
             return ok(
                 {
+                    "installed": installed,
                     "present": False,
                     "running": running,
                     "in_sync": False,
@@ -920,6 +948,7 @@ class Plugin:
         )
         return ok(
             {
+                "installed": installed,
                 "present": True,
                 "running": running,
                 "in_sync": in_sync,
@@ -957,6 +986,77 @@ class Plugin:
             "Synced this Deck's identity into the desktop Deskflow app (%s)",
             DESKTOP_DESKFLOW_CONFIG_PATH,
         )
+        return ok({"path": DESKTOP_DESKFLOW_CONFIG_PATH})
+
+    @safe
+    async def install_desktop_deskflow(self):
+        """Install the desktop Deskflow app, configure it, and set it to autostart.
+
+        User scope, matching how our own helper is installed: no elevated privilege
+        needed at the flatpak layer, survives SteamOS updates cleanly. If it turns out
+        to already be installed under any scope, the install step is skipped and this
+        goes straight to configuration -- so retrying after a partial failure, or
+        running it against an install the user made some other way, is always safe.
+        """
+        if not await self._is_desktop_app_installed():
+            try:
+                await run_command(
+                    ["flatpak", "install", "--user", "--noninteractive", "flathub", DESKTOP_APP_ID],
+                    timeout=INSTALL_TIMEOUT_S,
+                )
+            except CommandTimeout:
+                return err("timeout", "Installing the desktop Deskflow app took too long.")
+            except Exception:  # noqa: BLE001 - reported to the user, not swallowed
+                decky.logger.exception("Could not install the desktop Deskflow app")
+                return err(
+                    "install_failed", "Could not install the desktop Deskflow app from Flathub."
+                )
+
+        # A first launch never asks the user anything, so nothing ever blocks on a
+        # wizard here -- it just needs the chance to write its own [core] defaults.
+        # The offscreen launch always runs the full timeout (there is nothing that
+        # makes a GUI app exit on its own); that is the expected, successful path.
+        identity = await self._loop.run_in_executor(
+            None, read_desktop_identity, DESKTOP_DESKFLOW_CONFIG_PATH
+        )
+        if identity is None:
+            try:
+                await run_command(
+                    [
+                        "flatpak", "run", "--command=deskflow",
+                        "--env=QT_QPA_PLATFORM=offscreen", DESKTOP_APP_ID,
+                    ],
+                    timeout=BOOTSTRAP_LAUNCH_TIMEOUT_S,
+                )
+            except CommandTimeout:
+                pass
+            except Exception:  # noqa: BLE001 - best-effort; the check below is authoritative
+                decky.logger.warning("Bootstrap launch of the desktop app raised", exc_info=True)
+
+        try:
+            needs_bootstrap = await self._loop.run_in_executor(
+                None, desktop_client_config_needs_bootstrap, DESKTOP_DESKFLOW_CONFIG_PATH
+            )
+            configure = bootstrap_client_config if needs_bootstrap else sync_desktop_identity
+            await self._loop.run_in_executor(
+                None,
+                configure,
+                DESKTOP_DESKFLOW_CONFIG_PATH,
+                self._settings.get("server_host"),
+                self._settings.get("client_name"),
+            )
+        except SyncError as exc:
+            return err("desktop_app_setup_failed", str(exc))
+
+        try:
+            await self._loop.run_in_executor(None, write_autostart_entry, decky.HOME)
+        except SyncError as exc:
+            return err(
+                "desktop_app_setup_failed",
+                f"Installed and configured, but autostart setup failed: {exc}",
+            )
+
+        decky.logger.info("Installed, configured, and set up autostart for the desktop app.")
         return ok({"path": DESKTOP_DESKFLOW_CONFIG_PATH})
 
     # ----------------------------------------------------------------- helper install

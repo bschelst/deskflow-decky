@@ -197,6 +197,7 @@ describe("isSettings", () => {
 
 describe("isDesktopDeskflowStatus / toDesktopDeskflowStatus", () => {
   const present = {
+    installed: true,
     present: true,
     running: false,
     in_sync: false,
@@ -205,6 +206,7 @@ describe("isDesktopDeskflowStatus / toDesktopDeskflowStatus", () => {
   };
 
   const absent = {
+    installed: false,
     present: false,
     running: false,
     in_sync: false,
@@ -220,12 +222,13 @@ describe("isDesktopDeskflowStatus / toDesktopDeskflowStatus", () => {
     expect(isDesktopDeskflowStatus(absent)).toBe(true);
   });
 
-  it.each(["present", "running", "in_sync"])("rejects a non-boolean %s", (field) => {
+  it.each(["installed", "present", "running", "in_sync"])("rejects a non-boolean %s", (field) => {
     expect(isDesktopDeskflowStatus({ ...present, [field]: "yes" })).toBe(false);
   });
 
   it("converts snake_case to the camelCase the UI uses", () => {
     expect(toDesktopDeskflowStatus(present)).toEqual({
+      installed: true,
       present: true,
       running: false,
       inSync: false,

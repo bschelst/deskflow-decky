@@ -225,6 +225,7 @@ export function toHelperInfo(raw: unknown): HelperInfo | null {
 }
 
 interface RawDesktopDeskflowStatus {
+  installed: boolean;
   present: boolean;
   running: boolean;
   in_sync: boolean;
@@ -234,13 +235,18 @@ interface RawDesktopDeskflowStatus {
 
 export function isDesktopDeskflowStatus(value: unknown): value is RawDesktopDeskflowStatus {
   return (
-    isObject(value) && isBool(value.present) && isBool(value.running) && isBool(value.in_sync)
+    isObject(value) &&
+    isBool(value.installed) &&
+    isBool(value.present) &&
+    isBool(value.running) &&
+    isBool(value.in_sync)
   );
 }
 
 export function toDesktopDeskflowStatus(raw: unknown): DesktopDeskflowStatus | null {
   if (!isDesktopDeskflowStatus(raw)) return null;
   return {
+    installed: raw.installed,
     present: raw.present,
     running: raw.running,
     inSync: raw.in_sync,

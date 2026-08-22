@@ -46,6 +46,7 @@ export const ERROR_CODES = [
   "transport",
   "desktop_app_running",
   "desktop_app_not_found",
+  "desktop_app_setup_failed",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -126,6 +127,7 @@ export interface HelperInfo {
 
 /** Whether the stock Deskflow desktop app (a separate flatpak) matches this Deck. */
 export interface DesktopDeskflowStatus {
+  installed: boolean;
   /** False also covers "installed but never run" -- it has no config yet either way. */
   present: boolean;
   /** Syncing while it holds an open config handle would be undone when it exits. */

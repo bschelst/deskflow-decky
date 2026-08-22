@@ -32,6 +32,7 @@ ERROR_CODES = frozenset(
         "timeout",  # an operation exceeded its deadline
         "desktop_app_running",  # the stock desktop app must be closed first
         "desktop_app_not_found",  # the stock desktop app is not installed or has no config yet
+        "desktop_app_setup_failed",  # bootstrap/sync or autostart setup failed after install
     }
 )
 

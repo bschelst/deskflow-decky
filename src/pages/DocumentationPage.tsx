@@ -76,6 +76,11 @@ const TROUBLESHOOTING: Array<{ code: ErrorCode; meaning: string; fix: string }> 
     fix: "Install org.deskflow.deskflow and open it once in Desktop Mode so it writes its own config, then try again. The sync only knows how to find the flatpak install (org.deskflow.deskflow under ~/.var/app) -- which is the only one SteamOS supports anyway, so this should not come up in practice.",
   },
   {
+    code: "desktop_app_setup_failed",
+    meaning: "The desktop app installed, but configuring it or setting up autostart failed partway through.",
+    fix: "Check the plugin log for the exact step that failed, then retry -- Install is safe to run again, it skips straight past whatever already succeeded.",
+  },
+  {
     code: "tls_setup_failed",
     meaning: "The certificate could not be generated.",
     fix: "Check that openssl is available. Deskflow's own engine cannot create this file, so the plugin does it.",
