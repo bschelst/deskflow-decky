@@ -4,11 +4,10 @@ name: CI
 # workflow-injection surface here. Keep it that way: if a future step needs event data,
 # pass it through env: and reference it as a shell variable.
 
+
 on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: read
