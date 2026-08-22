@@ -44,7 +44,7 @@ MAX_SCREEN_EXTENT = 32767
 # `^[A-Za-z0-9._-]+$` accepts "deck\n" -- which would inject a line break into the
 # generated Deskflow INI file.
 _LABEL_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\Z")
-_CLIENT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,%d}\Z" % (MAX_CLIENT_NAME_LENGTH - 1))
+_CLIENT_NAME_RE = re.compile(rf"^[A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_CLIENT_NAME_LENGTH - 1}}}\Z")
 _SAFE_TEXT = frozenset(string.printable) - frozenset(string.whitespace) | {" "}
 
 
@@ -56,7 +56,7 @@ class ValidationError(Exception):
     """
 
     def __init__(self, field, message):
-        super().__init__("{0}: {1}".format(field, message))
+        super().__init__(f"{field}: {message}")
         self.field = field
         self.message = message
 
@@ -87,7 +87,7 @@ def _bounded_int(field, value, low, high):
     if not _is_int(value):
         raise ValidationError(field, "must be a whole number")
     if not low <= value <= high:
-        raise ValidationError(field, "must be between {0} and {1}".format(low, high))
+        raise ValidationError(field, f"must be between {low} and {high}")
     return value
 
 
@@ -98,7 +98,7 @@ def _bounded_float(field, value, low, high):
     if not math.isfinite(number):
         raise ValidationError(field, "must be a finite number")
     if not low <= number <= high:
-        raise ValidationError(field, "must be between {0} and {1}".format(low, high))
+        raise ValidationError(field, f"must be between {low} and {high}")
     return number
 
 
@@ -106,7 +106,7 @@ def _one_of(field, value, members):
     if not isinstance(value, str) or _is_bool(value):
         raise ValidationError(field, "must be text")
     if value not in members:
-        raise ValidationError(field, "must be one of: {0}".format(", ".join(sorted(members))))
+        raise ValidationError(field, "must be one of: {}".format(", ".join(sorted(members))))
     return value
 
 
@@ -176,7 +176,7 @@ def _client_name(field, value):
         raise ValidationError(
             field,
             "must start with a letter or digit and contain only letters, digits, "
-            "dots, hyphens and underscores (max {0} characters)".format(MAX_CLIENT_NAME_LENGTH),
+            f"dots, hyphens and underscores (max {MAX_CLIENT_NAME_LENGTH} characters)",
         )
     return value
 
@@ -185,7 +185,7 @@ def _client_name(field, value):
 
 
 def _runtime_dir():
-    return os.environ.get("XDG_RUNTIME_DIR") or "/run/user/{0}".format(os.getuid())
+    return os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
 
 
 def _socket_path_override(field, value):
@@ -371,11 +371,11 @@ def sanitize_loaded(raw):
         except ValidationError as exc:
             settings[name] = default
             warnings.append(
-                "Setting '{0}' was invalid ({1}); reset to its default.".format(name, exc.message)
+                f"Setting '{name}' was invalid ({exc.message}); reset to its default."
             )
 
     for name in sorted(set(raw) - set(FIELDS)):
-        warnings.append("Unknown setting '{0}' was ignored.".format(name))
+        warnings.append(f"Unknown setting '{name}' was ignored.")
 
     # Repair cross-field violations rather than refusing to start. Repairs fail safe:
     # turning verification back on, never turning security off to make a file load.
@@ -387,6 +387,8 @@ def sanitize_loaded(raw):
 
     if settings["mode"] == "client" and settings["server_host"] == "":
         # Not an error: this is simply an install that has not been configured yet.
-        warnings.append("No server address is configured; the helper cannot start until one is set.")
+        warnings.append(
+            "No server address is configured; the helper cannot start until one is set."
+        )
 
     return settings, warnings

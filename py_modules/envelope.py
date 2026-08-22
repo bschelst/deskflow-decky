@@ -52,7 +52,7 @@ def ok(data=None):
 
 def err(code, message):
     if code not in ERROR_CODES:
-        raise KeyError("undeclared error code: {0}".format(code))
+        raise KeyError(f"undeclared error code: {code}")
     return {"ok": False, "data": None, "error": {"code": code, "message": message}}
 
 
@@ -74,7 +74,7 @@ def safe(method):
         except asyncio.CancelledError:
             raise
         except ValidationError as exc:
-            return err("validation", "{0}: {1}".format(exc.field, exc.message))
+            return err("validation", f"{exc.field}: {exc.message}")
         except Exception:
             if _logger is not None:
                 _logger.exception("Unhandled error in %s", method.__name__)

@@ -5,6 +5,7 @@ showing "connected" for a process that died thirty seconds ago. One machine, one
 transition table, unit-tested.
 """
 
+import contextlib
 import time
 
 __all__ = ["STATES", "HelperState", "IllegalTransition"]
@@ -27,7 +28,7 @@ _ALLOWED = {
 
 class IllegalTransition(Exception):
     def __init__(self, origin, target):
-        super().__init__("cannot move from {0} to {1}".format(origin, target))
+        super().__init__(f"cannot move from {origin} to {target}")
         self.origin = origin
         self.target = target
 
@@ -101,7 +102,6 @@ class HelperState:
     def _notify(self, origin, target, reason):
         if self._on_change is None:
             return
-        try:
+        # Suppress everything: a broken listener must not corrupt the machine.
+        with contextlib.suppress(Exception):
             self._on_change(origin, target, reason)
-        except Exception:  # noqa: BLE001 - a broken listener must not corrupt the machine
-            pass

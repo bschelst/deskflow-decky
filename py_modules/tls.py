@@ -112,7 +112,7 @@ class TrustStore:
         self._save([fp for fp in self.all() if fp != target])
 
     def _save(self, fingerprints):
-        text = "".join("v2:sha256:{0}\n".format(fp) for fp in fingerprints)
+        text = "".join(f"v2:sha256:{fp}\n" for fp in fingerprints)
         write_private(self.path, text)
 
 
@@ -183,7 +183,7 @@ def certificate_arguments(cert_path, common_name):
         "-out",
         cert_path,
         "-subj",
-        "/CN={0}".format(common_name),
+        f"/CN={common_name}",
     ]
 
 

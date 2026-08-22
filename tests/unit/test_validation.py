@@ -204,7 +204,9 @@ def test_pointer_sensitivity_accepts_in_range(good):
     assert validate_field("pointer_sensitivity", good) == float(good)
 
 
-@pytest.mark.parametrize("bad", [0.24, 4.01, 0, -1.0, float("nan"), float("inf"), "1.0", None, True])
+@pytest.mark.parametrize(
+    "bad", [0.24, 4.01, 0, -1.0, float("nan"), float("inf"), "1.0", None, True]
+)
 def test_pointer_sensitivity_rejects_out_of_range_and_wrong_types(bad):
     expect_invalid("pointer_sensitivity", bad)
 

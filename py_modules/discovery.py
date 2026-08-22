@@ -35,13 +35,11 @@ class DiscoveryResult:
         }
 
     def __repr__(self):
-        return "DiscoveryResult(found={0!r}, path={1!r}, source={2!r})".format(
-            self.found, self.path, self.source
-        )
+        return f"DiscoveryResult(found={self.found!r}, path={self.path!r}, source={self.source!r})"
 
 
 def _runtime_dir():
-    return os.environ.get("XDG_RUNTIME_DIR") or "/run/user/{0}".format(os.getuid())
+    return os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
 
 
 def _is_usable_socket(path, root):
@@ -56,7 +54,7 @@ def _is_usable_socket(path, root):
     try:
         info = os.stat(resolved)
     except OSError as exc:
-        return False, "cannot be inspected ({0})".format(exc.strerror)
+        return False, f"cannot be inspected ({exc.strerror})"
     if not stat.S_ISSOCK(info.st_mode):
         return False, "is not a socket"
     if info.st_uid != os.getuid():
@@ -68,13 +66,13 @@ def _candidates(root, checked):
     try:
         entries = sorted(os.listdir(root))
     except OSError as exc:
-        checked.append("Runtime directory {0}: cannot be listed ({1}).".format(root, exc.strerror))
+        checked.append(f"Runtime directory {root}: cannot be listed ({exc.strerror}).")
         return []
 
     names = [name for name in entries if name.endswith(_SOCKET_SUFFIX)]
     if not names:
         checked.append(
-            "Runtime directory {0}: no '*{1}' socket present.".format(root, _SOCKET_SUFFIX)
+            f"Runtime directory {root}: no '*{_SOCKET_SUFFIX}' socket present."
         )
         return []
 
@@ -94,7 +92,7 @@ def discover_socket(settings, relay_path=None):
         usable, why = _is_usable_socket(override, root)
         if usable:
             return DiscoveryResult(True, override, "override", checked)
-        checked.append("Configured socket path {0}: {1}.".format(override, why))
+        checked.append(f"Configured socket path {override}: {why}.")
         return DiscoveryResult(False, None, "override", checked)
 
     # 2. A relay file, for the case where the socket path must be published to us.
@@ -104,14 +102,14 @@ def discover_socket(settings, relay_path=None):
                 published = open(relay_path, encoding="utf-8").read().strip()
             except OSError as exc:
                 published = ""
-                checked.append("Relay file {0}: unreadable ({1}).".format(relay_path, exc.strerror))
+                checked.append(f"Relay file {relay_path}: unreadable ({exc.strerror}).")
             if published:
                 usable, why = _is_usable_socket(published, root)
                 if usable:
                     return DiscoveryResult(True, published, "relay-file", checked)
-                checked.append("Relay file target {0}: {1}.".format(published, why))
+                checked.append(f"Relay file target {published}: {why}.")
         else:
-            checked.append("Relay file {0}: not present.".format(relay_path))
+            checked.append(f"Relay file {relay_path}: not present.")
 
     # 3. LIBEI_SOCKET, if this process happened to inherit it.
     env_value = os.environ.get("LIBEI_SOCKET", "").strip()
@@ -120,7 +118,7 @@ def discover_socket(settings, relay_path=None):
         usable, why = _is_usable_socket(path, root)
         if usable:
             return DiscoveryResult(True, path, "libei-socket-env", checked)
-        checked.append("LIBEI_SOCKET points at {0}: {1}.".format(path, why))
+        checked.append(f"LIBEI_SOCKET points at {path}: {why}.")
     else:
         checked.append("LIBEI_SOCKET is not set in the plugin's environment.")
 
@@ -130,6 +128,6 @@ def discover_socket(settings, relay_path=None):
         usable, why = _is_usable_socket(path, root)
         if usable:
             return DiscoveryResult(True, path, "runtime-dir-scan", checked)
-        checked.append("Candidate {0}: {1}.".format(path, why))
+        checked.append(f"Candidate {path}: {why}.")
 
     return DiscoveryResult(False, None, None, checked)

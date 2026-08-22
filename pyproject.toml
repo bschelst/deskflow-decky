@@ -12,7 +12,9 @@ select = ["E", "F", "W", "I", "B", "UP", "S"]
 ignore = ["S603", "S607"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
+# S101: pytest asserts. S108: fixed /tmp paths are test fixtures, never opened.
+# E402: test_log_watch.py imports mid-file next to the tests that use them.
+"tests/*" = ["S101", "S108", "E402"]
 
 [tool.coverage.run]
 source = ["py_modules"]
