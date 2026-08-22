@@ -32,7 +32,7 @@
   "devDependencies": {
     "@decky/rollup": "^1.0.2",
     "@eslint/js": "^10.0.1",
-    "@types/react": "19.1.1",
+    "@types/react": "19.2.18",
     "@typescript-eslint/eslint-plugin": "^8.15.0",
     "@typescript-eslint/parser": "^8.15.0",
     "eslint": "^9.15.0",
