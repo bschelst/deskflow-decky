@@ -1,0 +1,53 @@
+name: Release
+
+# Builds the plugin with the official Decky CLI (same tool the plugin template uses:
+# https://github.com/SteamDeckHomebrew/cli) and attaches the resulting zip to a GitHub
+# Release, with the matching CHANGELOG.md section as the release body.
+#
+# Only reacts to tag pushes (vX.Y.Z), and every value used in a run: step comes from the
+# runner's own env (GITHUB_REF_NAME) or repo-controlled files (CHANGELOG.md) -- nothing
+# from an untrusted event payload (issue/PR/comment text) is interpolated here.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Decky CLI
+        run: |
+          curl -fsSL -o decky \
+            https://github.com/SteamDeckHomebrew/cli/releases/download/0.0.8/decky-linux-x86_64
+          chmod +x decky
+
+      - name: Build plugin package
+        run: ./decky plugin build . -s directory
+
+      - name: Extract changelog section
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version="${REF_NAME#v}"
+          awk -v ver="$version" '
+            $0 ~ "^## " ver { found=1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "error: no CHANGELOG.md section found for $version" >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: out/*.zip
