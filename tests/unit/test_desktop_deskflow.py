@@ -270,9 +270,30 @@ def test_bootstrap_adds_a_client_section(tmp_path):
     assert "computerName=steamdeck-99" in text
     assert "coreMode=1" in text
     assert "port=24800" in text
+    # Neither is written by a bare launch (FRESH_LAUNCH_CONFIG's [gui] section has
+    # only logExpanded) -- left unset, Deskflow prompts about updates and never
+    # auto-starts the client engine with the window.
+    assert "enableUpdateCheck=false" in text
+    assert "startCoreWithGui=true" in text
     # Everything from the first-launch bootstrap survives untouched.
     assert "clipboardSharingSize=@Variant(" in text
     assert "screens\\1\\name=" in text
+    assert "logExpanded=true" in text
+
+
+def test_bootstrap_substitutes_an_existing_gui_flag_rather_than_duplicating_it(tmp_path):
+    text = FRESH_LAUNCH_CONFIG.replace(
+        "[gui]\nlogExpanded=true\n", "[gui]\nlogExpanded=true\nenableUpdateCheck=true\n"
+    )
+    path = tmp_path / "Deskflow.conf"
+    path.write_text(text)
+    path.chmod(0o644)
+
+    bootstrap_client_config(str(path), "host", "name", 24800)
+
+    out = open(path).read()
+    assert out.count("enableUpdateCheck=") == 1
+    assert "enableUpdateCheck=false" in out
 
 
 def test_bootstrap_preserves_file_permissions(tmp_path):
@@ -315,6 +336,9 @@ def test_write_initial_client_config_from_scratch(tmp_path):
     assert "computerName=name" in text
     assert "coreMode=1" in text
     assert "port=24800" in text
+    assert "[gui]" in text
+    assert "enableUpdateCheck=false" in text
+    assert "startCoreWithGui=true" in text
     assert "[client]" in text
     assert "remoteHost=host" in text
 

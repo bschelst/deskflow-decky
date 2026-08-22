@@ -165,6 +165,28 @@ def _set_port(text, server_port):
     return _COMPUTER_NAME_LINE.sub(lambda m: f"{m.group(0)}\nport={port}", text, count=1)
 
 
+#: A bare launch is confirmed (on hardware, 2026-08-22) to always write this one [gui]
+#: key, which makes it a safe anchor for inserting keys a bare launch does NOT write.
+_GUI_LOG_EXPANDED_LINE = re.compile(r"(?m)^logExpanded=.*$")
+
+
+def _ensure_gui_flag(text, key, value):
+    """Set ``key=value`` under ``[gui]``, substituting it if present or inserting it
+    right after ``logExpanded=`` if not.
+
+    Both keys this is used for are absent from a bare launch's own [gui] section
+    (confirmed on hardware), which does not mean Deskflow defaults them silently: their
+    absence itself is what makes the GUI prompt on first run -- "check for updates?"
+    for enableUpdateCheck, and the client engine simply never auto-starting with the
+    window for startCoreWithGui. Setting either explicitly, to any value, is what
+    suppresses the corresponding prompt/behaviour.
+    """
+    line = re.compile(rf"(?m)^{re.escape(key)}=.*$")
+    if line.search(text) is not None:
+        return line.sub(f"{key}={value}", text, count=1)
+    return _GUI_LOG_EXPANDED_LINE.sub(lambda m: f"{m.group(0)}\n{key}={value}", text, count=1)
+
+
 def sync_desktop_identity(path, server_host, client_name, server_port):
     """Rewrite ``remoteHost=``, ``computerName=``, and ``port=`` in the desktop app's
     config.
@@ -252,6 +274,10 @@ def bootstrap_client_config(path, server_host, client_name, server_port):
     text = _set_port(text, server_port)
     if _CORE_MODE_LINE.search(text) is not None:
         text = _CORE_MODE_LINE.sub(f"coreMode={_CORE_MODE_CLIENT}", text, count=1)
+    # Neither key is written by a bare launch; left unset, Deskflow prompts to ask
+    # about the first and never auto-starts the client engine because of the second.
+    text = _ensure_gui_flag(text, "enableUpdateCheck", "false")
+    text = _ensure_gui_flag(text, "startCoreWithGui", "true")
     text = text.rstrip("\n") + f"\n\n[client]\nremoteHost={host}\n"
 
     return _atomic_rewrite(path, text, mode)
@@ -283,6 +309,13 @@ def write_initial_client_config(path, server_host, client_name, server_port):
         f"computerName={name}\n"
         f"coreMode={_CORE_MODE_CLIENT}\n"
         f"port={port}\n"
+        "\n"
+        # Both explicit for the same reason bootstrap_client_config sets them: left
+        # unset, Deskflow prompts to ask about the first and never auto-starts the
+        # client engine because of the second.
+        "[gui]\n"
+        "enableUpdateCheck=false\n"
+        "startCoreWithGui=true\n"
         "\n"
         "[client]\n"
         f"remoteHost={host}\n"

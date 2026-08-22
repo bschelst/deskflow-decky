@@ -177,6 +177,16 @@ export const DocumentationPage: FC = () => (
           "next connection asks again from scratch."
         }
       />
+      <Entry
+        term="The desktop app asks too, separately"
+        detail={
+          "Its first connection to your server is a completely separate TLS trust " +
+          "relationship from this plugin's -- a different certificate, a different " +
+          "trust store. You will be asked to confirm the fingerprint there once, the " +
+          "same way, the first time it actually connects. That is expected, not a " +
+          "bug: skipping it would mean trusting an unverified certificate."
+        }
+      />
     </PanelSection>
 
     <PanelSection title="Locking input to one screen">
@@ -211,8 +221,10 @@ export const DocumentationPage: FC = () => (
       />
       <Paragraph>
         The shortcut is handled by the server, because that is where the keyboard is.
-        The plugin's own 'Input enabled' toggle does something similar from the Deck
-        side: it stops input being delivered without dropping the connection.
+        The plugin's own 'Input enabled' toggle is not a lighter-weight version of
+        this: deskflow-core has no way to pause injection without dropping the
+        connection, so that toggle just starts and stops the helper, the same as the
+        one above it.
       </Paragraph>
     </PanelSection>
 
