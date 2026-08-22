@@ -5,7 +5,7 @@
 <h1 align="center">Deskflow Decky</h1>
 
 <p align="center">
-  Use your desktop's keyboard and mouse on the Steam Deck — in Gaming Mode.
+  Use your desktop's / laptop's keyboard and mouse on the Steam Deck or Steam Machine — in Gaming Mode.
 </p>
 
 <p align="center">
@@ -31,11 +31,11 @@
 
 ## 🤔 Why this exists
 
-[Deskflow](https://github.com/deskflow/deskflow) works on the Steam Deck in Desktop Mode through the XDG RemoteDesktop portal. In Gaming Mode there is no portal behind Gamescope, so it does not work at all.
+[Deskflow](https://github.com/deskflow/deskflow) works on the Steam Deck/Steam Machine in Desktop Mode. In Gaming Mode it does not work at all.
 
-Gamescope *does* run an EIS server and accepts local libei clients — the input path exists, it just is not reachable from stock Deskflow, which hard-codes the portal backend.
+**Deskflow Decky** tries to make this possible by creating purpose-built Deskflow helper and a Decky front end that handles configuration, process lifecycle, diagnostics, and input activation from the Quick Access Menu.
 
-**Deskflow Decky** bridges that gap with a purpose-built Deskflow helper and a Decky front end that handles configuration, process lifecycle, diagnostics, and input activation from the Quick Access Menu.
+NOTE: The logo was made with AI. I can't make images, so feel free to send a pull request with new logo if you really want to change that.
 
 ## 📦 Installation
 
@@ -46,7 +46,7 @@ Distribution is via GitHub Releases as a sideload.
 - 🎮 Steam Deck running SteamOS with [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) 3.2.6+
 - 🖥️ Gamescope with libeis support (stock SteamOS qualifies)
 - 📦 Flatpak available for the user-scope helper
-- 🌐 A machine on the same network running a Deskflow server
+- 🌐 A machine on the same network running a Deskflow server. TIP: You can use tailscale & the Decky tailscale plugin.
 
 ## 🏗️ Architecture
 
