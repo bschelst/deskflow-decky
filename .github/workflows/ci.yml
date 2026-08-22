@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           # SteamOS ships 3.11; local development may be newer, so CI pins the
           # version the plugin actually has to run on.
