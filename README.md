@@ -147,3 +147,11 @@ pnpm check
 - [Deskflow](https://github.com/deskflow/deskflow) — the keyboard and mouse sharing engine this builds on
 - [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) — the Steam Deck plugin platform
 - [Gamescope](https://github.com/ValveSoftware/gamescope) — whose libeis server makes the Gaming Mode input path possible
+
+## ⚠️ Disclaimer
+
+This is an independent, community project. It is not affiliated with, endorsed by, or
+sponsored by Valve Corporation (Steam, Steam Deck, SteamOS) or the Deskflow project.
+"Steam" and "Steam Deck" are trademarks of Valve Corporation. Deskflow is its own
+separate open-source project; this plugin builds on it under the terms of its
+GPL-2.0 licence, nothing more.
