@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.0 — 22 Aug 2026
+
+### What's new
+
+- Keyboard layot is now independent of the server. Pick your own keyboard language layout in the plugin
+  and should remain like this regardless of what OS or layout the server side is running — needed
+  a fifth patch that replays physical key positions instead of trusting the server's
+  keysyms. Needs a reboot after changing.
+- Settings shows a reboot button when a layout change needs Gaming Mode to restart before
+  it takes effect, guarded behind a confirm dialog so it doesnt fire by accident.
+- Autostart now retries while gamescope's input socket is not up yet, instead of staying
+  in error on the first boot every time.
+
+### Fixes
+
+- Reboot now goes through Steam's own restart call instead of systemctl. The plugin
+  backend has no permission to reboot directly ("interactive authentication required"),
+  but Steam's own power-menu path needs nothing extra.
+- Cleared out a pile of ruff lint debt so CI actually passes again.
+
+### Other
+
+- Rewrote the README with a logo and an overview.
+
+
 ## 0.1.0 — 22 Aug 2026
 
 First version that actually works. Keyboard and mouse from my laptop now reach the
