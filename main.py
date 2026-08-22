@@ -1462,6 +1462,28 @@ class Plugin:
                 else "you will be asked to confirm it on the next connection",
             )
 
+        # 8. The desktop app, for Desktop Mode -- a separate surface from everything
+        # above, which is all about Gaming Mode. Shown unconditionally: whether it is
+        # worth having installed does not depend on this Deck's own mode setting.
+        desktop_status = await self.get_desktop_deskflow_status()
+        desktop_info = desktop_status.get("data") or {}
+        if not desktop_info.get("installed"):
+            desktop_detail = "not installed; use the Install button above for Desktop Mode"
+        elif not desktop_info.get("present"):
+            desktop_detail = "installed, but never configured -- open it once in Desktop Mode"
+        elif not desktop_info.get("in_sync"):
+            desktop_detail = "installed, but out of sync with this Deck -- use Sync above"
+        else:
+            desktop_detail = "installed and configured as '{}'".format(
+                desktop_info.get("computer_name")
+            )
+        add(
+            "desktop_app",
+            "Desktop Deskflow app (for Desktop Mode)",
+            bool(desktop_info.get("installed")),
+            desktop_detail,
+        )
+
         passed = sum(1 for check in checks if check["ok"])
         decky.logger.info("Self-test: %s of %s checks passed", passed, len(checks))
         return ok({"checks": checks, "passed": passed, "total": len(checks)})
