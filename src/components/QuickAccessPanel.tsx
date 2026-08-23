@@ -15,14 +15,16 @@ import {
   acceptFingerprint,
   disableInput,
   enableInput,
+  getHelperInfo,
   getPendingFingerprint,
+  installHelper,
   rejectFingerprint,
   restartHelper,
   runSelfTest,
   startHelper,
   stopHelper,
 } from "../api/backend";
-import type { SelfTestCheck, Status } from "../api/types";
+import type { HelperInfo, SelfTestCheck, Status } from "../api/types";
 import { useAction, useDeskflowStatus } from "../hooks/useDeskflowStatus";
 import { truncate } from "../lib/format";
 import { PLUGIN_ROUTE } from "../routes";
@@ -41,8 +43,16 @@ export const QuickAccessPanel: FC = () => {
   const [busy, perform, actionError] = useAction(refresh);
   const [note, setNote] = useState<string | null>(null);
   const [checks, setChecks] = useState<SelfTestCheck[] | null>(null);
+  const [helper, setHelper] = useState<HelperInfo | null>(null);
   // Guards against re-opening the dialog on every status poll while it is already up.
   const promptOpen = useRef(false);
+
+  useEffect(() => {
+    void (async () => {
+      const result = await getHelperInfo();
+      if (result.ok) setHelper(result.data);
+    })();
+  }, []);
 
   const promptForFingerprint = useCallback(async () => {
     if (promptOpen.current) return;
@@ -100,6 +110,45 @@ export const QuickAccessPanel: FC = () => {
   }
 
   const diagnostic = note ?? actionError?.message ?? status.lastError ?? error?.message ?? null;
+
+  // Shown in place of the normal panel until the helper is installed -- otherwise a
+  // first-time user lands on toggles for a helper that does not exist yet, with no
+  // hint that Settings has an install button several screens down.
+  if (helper !== null && !helper.installed) {
+    return (
+      <PanelSection title="Get started">
+        <PanelSectionRow>
+          <Field
+            description="Deskflow Decky needs its helper installed before it can connect to your Deskflow server."
+            bottomSeparator="none"
+          />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            disabled={busy}
+            onClick={() =>
+              void perform(async () => {
+                const result = await installHelper();
+                if (result.ok) {
+                  setHelper(result.data);
+                  setNote("Deskflow Decky helper installed.");
+                }
+                return result;
+              })
+            }
+          >
+            Install Deskflow Decky helper
+          </ButtonItem>
+        </PanelSectionRow>
+        {diagnostic ? (
+          <PanelSectionRow>
+            <Field description={truncate(diagnostic)} bottomSeparator="none" />
+          </PanelSectionRow>
+        ) : null}
+      </PanelSection>
+    );
+  }
 
   return (
     <>
